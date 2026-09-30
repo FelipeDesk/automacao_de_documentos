@@ -1,7 +1,7 @@
 import re
 
 def extrair_cpfs(texto):
-    padrao_cpf = r'\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b'
+    padrao_cpf = r'\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b'
 
     cpfs = re.findall(padrao_cpf, texto)
 
