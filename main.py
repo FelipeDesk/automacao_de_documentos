@@ -1,14 +1,22 @@
 import json
 from pathlib import Path
 from extrator import extrair_cpfs, validar_cpf
+from leitor import ler_documento
 
 pasta_entrada = Path('entrada')
 pasta_resultados = Path("resultados")
 
-arquivos = pasta_entrada.glob('*.txt')
+arquivos = pasta_entrada.iterdir()
 
 for arquivo in arquivos:
-    conteudo = arquivo.read_text(encoding='utf-8')
+    if not arquivo.is_file():
+        continue
+
+    conteudo = ler_documento(arquivo)
+
+    if conteudo is None:
+        print(f"Formato não suportado: {arquivo.name}")
+        continue
 
     cpfs = extrair_cpfs(conteudo)
 
