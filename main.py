@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from extrator import extrair_cpfs, validar_cpf
+from extrator import extrair_cpfs, validar_cpf, extrair_cnpjs, validar_cnpj, extrair_datas, validar_data, extrair_valores
 from leitor import ler_documento
 
 pasta_entrada = Path('entrada')
@@ -26,9 +26,18 @@ for arquivo in arquivos:
         print(f"OCR não conseguiu extrair texto: {arquivo.name}")
         continue
 
+    if status == "texto_nao_encontrado":
+        print(f"Texto não encontrado: {arquivo.name}")
+        continue
+
     cpfs = extrair_cpfs(conteudo)
+    cnpjs = extrair_cnpjs(conteudo)
+    datas = extrair_datas(conteudo)
+    valores = extrair_valores(conteudo)
 
     cpfs_encontrados = []
+    cnpjs_encontrados = []
+    datas_encontradas = []
 
     for cpf in cpfs:
 
@@ -39,9 +48,28 @@ for arquivo in arquivos:
 
         cpfs_encontrados.append(dados_cpf)
 
+    for cnpj in cnpjs:
+        dados_cnpj = {
+            "numero": cnpj,
+            "valido": validar_cnpj(cnpj)
+        }
+
+        cnpjs_encontrados.append(dados_cnpj)
+
+    for data in datas:
+        dados_data = {
+            "valor": data,
+            "valida": validar_data(data)
+        }
+
+        datas_encontradas.append(dados_data)
+
     resultado = {
         "arquivo": arquivo.name,
-        "cpfs": cpfs_encontrados
+        "cpfs": cpfs_encontrados,
+        "cnpjs": cnpjs_encontrados,
+        "datas": datas_encontradas,
+        "valores": valores
     }
 
     nome_resultado = arquivo.stem + ".json"

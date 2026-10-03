@@ -1,4 +1,5 @@
 from pypdf import PdfReader
+from docx import Document
 from ocr import extrair_texto_imagem
 from ocr import extrair_texto_imagem, aplicar_ocr_pagina_pdf
 
@@ -15,7 +16,6 @@ def texto_util(texto):
 
 def ler_txt(caminho):
     return caminho.read_text(encoding="utf-8")
-
 
 def ler_pdf(caminho):
     leitor = PdfReader(caminho)
@@ -40,6 +40,15 @@ def ler_pdf(caminho):
 
     return texto_completo
 
+def ler_docx(caminho):
+    documento = Document(caminho)
+
+    texto = ""
+
+    for paragrafo in documento.paragraphs:
+        texto += paragrafo.text + "\n"
+
+    return texto
 
 def ler_documento(caminho):
 
@@ -65,5 +74,13 @@ def ler_documento(caminho):
             return texto, "sucesso"
 
         return None, "ocr_falhou"
+
+    if extensao == ".docx":
+        texto = ler_docx(caminho)
+
+        if texto_util(texto):
+            return texto, "sucesso"
+
+        return None, "texto_nao_encontrado"
 
     return None, "formato_nao_suportado"
