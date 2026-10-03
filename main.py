@@ -12,10 +12,18 @@ for arquivo in arquivos:
     if not arquivo.is_file():
         continue
 
-    conteudo = ler_documento(arquivo)
+    conteudo, status = ler_documento(arquivo)
 
-    if conteudo is None:
+    if status == "formato_nao_suportado":
         print(f"Formato não suportado: {arquivo.name}")
+        continue
+
+    if status == "ocr_necessario":
+        print(f"OCR necessário: {arquivo.name}")
+        continue
+
+    if status == "ocr_falhou":
+        print(f"OCR não conseguiu extrair texto: {arquivo.name}")
         continue
 
     cpfs = extrair_cpfs(conteudo)
@@ -48,4 +56,4 @@ for arquivo in arquivos:
             ensure_ascii=False
         )
 
-    print(f"{arquivo.name} processado com sucesso.")
+    print(f"Processado com sucesso: {arquivo.name}")
