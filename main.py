@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from extrator import extrair_cpfs, validar_cpf, extrair_cnpjs, validar_cnpj, extrair_datas, validar_data, extrair_valores
 from leitor import ler_documento
+from leitor_xml import processar_xml
 
 pasta_entrada = Path('entrada')
 pasta_resultados = Path("resultados")
@@ -10,6 +11,38 @@ arquivos = pasta_entrada.iterdir()
 
 for arquivo in arquivos:
     if not arquivo.is_file():
+        continue
+
+    if arquivo.suffix.lower() == ".xml":
+        resultado = processar_xml(arquivo)
+
+        if resultado is None:
+            print(
+                f"XML não reconhecido: {arquivo.name}"
+            )
+            continue
+
+        nome_resultado = arquivo.stem + ".json"
+        caminho_resultado = (
+            pasta_resultados / nome_resultado
+        )
+
+        with open(
+            caminho_resultado,
+            "w",
+            encoding="utf-8"
+        ) as arquivo_json:
+            json.dump(
+                resultado,
+                arquivo_json,
+                indent=4,
+                ensure_ascii=False
+            )
+
+        print(
+            f"Processado com sucesso:: {arquivo.name}"
+        )
+
         continue
 
     conteudo, status = ler_documento(arquivo)

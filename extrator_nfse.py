@@ -97,10 +97,3 @@ def extrair_nfse_xml(caminho):
         "data_vencimento": None,
         "valor_total": valor_total
     }
-
-if __name__ == "__main__":
-    resultado = extrair_nfse_xml(
-        "entrada/nfse_teste.xml"
-    )
-
-    print(resultado)

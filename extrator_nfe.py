@@ -106,10 +106,3 @@ def extrair_nfe_xml(caminho):
         "data_vencimento": data_vencimento,
         "valor_total": valor_total
     }
-
-if __name__ == "__main__":
-    resultado = extrair_nfe_xml(
-        "entrada/nfe_teste.xml"
-    )
-
-    print(resultado)
