@@ -4,6 +4,7 @@ from extrator import extrair_cpfs, validar_cpf, extrair_cnpjs, validar_cnpj, ext
 from leitor import ler_documento
 from leitor_xml import processar_xml
 from normalizador import normalizar_resultado
+from validador import validar_resultado
 
 pasta_entrada = Path('entrada')
 pasta_resultados = Path("resultados")
@@ -40,6 +41,10 @@ for arquivo in arquivos:
             continue
 
         resultado = normalizar_resultado(resultado)
+
+        validacoes = validar_resultado(resultado)
+
+        resultado["validacoes"] = validacoes
 
         salvar_resultado(
             resultado,
