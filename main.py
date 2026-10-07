@@ -3,11 +3,28 @@ from pathlib import Path
 from extrator import extrair_cpfs, validar_cpf, extrair_cnpjs, validar_cnpj, extrair_datas, validar_data, extrair_valores
 from leitor import ler_documento
 from leitor_xml import processar_xml
+from normalizador import normalizar_resultado
 
 pasta_entrada = Path('entrada')
 pasta_resultados = Path("resultados")
 
 arquivos = pasta_entrada.iterdir()
+
+def salvar_resultado(resultado, arquivo, pasta_resultados):
+    nome_resultado = arquivo.stem + ".json"
+    caminho_resultado = pasta_resultados / nome_resultado
+
+    with open(
+        caminho_resultado,
+        "w",
+        encoding="utf-8"
+    ) as arquivo_json:
+        json.dump(
+            resultado,
+            arquivo_json,
+            indent=4,
+            ensure_ascii=False
+        )
 
 for arquivo in arquivos:
     if not arquivo.is_file():
@@ -22,26 +39,15 @@ for arquivo in arquivos:
             )
             continue
 
-        nome_resultado = arquivo.stem + ".json"
-        caminho_resultado = (
-            pasta_resultados / nome_resultado
+        resultado = normalizar_resultado(resultado)
+
+        salvar_resultado(
+            resultado,
+            arquivo,
+            pasta_resultados
         )
 
-        with open(
-            caminho_resultado,
-            "w",
-            encoding="utf-8"
-        ) as arquivo_json:
-            json.dump(
-                resultado,
-                arquivo_json,
-                indent=4,
-                ensure_ascii=False
-            )
-
-        print(
-            f"Processado com sucesso:: {arquivo.name}"
-        )
+        print(f"Processado com sucesso: {arquivo.name}")
 
         continue
 
@@ -105,16 +111,10 @@ for arquivo in arquivos:
         "valores": valores
     }
 
-    nome_resultado = arquivo.stem + ".json"
-    caminho_resultado = pasta_resultados / nome_resultado
-
-    with open(caminho_resultado, "w", encoding="utf-8") as arquivo_json:
-
-        json.dump(
-            resultado,
-            arquivo_json,
-            indent=4,
-            ensure_ascii=False
-        )
+    salvar_resultado(
+        resultado,
+        arquivo,
+        pasta_resultados
+    )
 
     print(f"Processado com sucesso: {arquivo.name}")
