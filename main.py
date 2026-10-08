@@ -7,6 +7,7 @@ from normalizador import normalizar_resultado
 from validador import validar_resultado
 from extrator_nfe_pdf import extrair_nfe_pdf
 from classificador_fiscal import identificar_tipo_pdf
+from extrator_nfse_pdf import extrair_nfse_pdf
 
 pasta_entrada = Path('entrada')
 pasta_resultados = Path("resultados")
@@ -52,19 +53,28 @@ for arquivo in arquivos:
         if tipo == "nfe":
             resultado = extrair_nfe_pdf(texto)
 
-            resultado = normalizar_resultado(resultado)
+        elif tipo == "nfse":
+            resultado = extrair_nfse_pdf(texto)
 
-            validacoes = validar_resultado(resultado)
-            resultado["validacoes"] = validacoes
-
-            salvar_resultado(
-                resultado,
-                arquivo,
-                pasta_resultados
+        else:
+            print(
+                f"Documento não identificado: {arquivo.name}"
             )
-
-            print(f"{arquivo.name} processado com sucesso.")
             continue
+
+        resultado = normalizar_resultado(resultado)
+
+        validacoes = validar_resultado(resultado)
+        resultado["validacoes"] = validacoes
+
+        salvar_resultado(
+            resultado,
+            arquivo,
+            pasta_resultados
+        )
+
+        print(f"{arquivo.name} processado com sucesso.")
+        continue
 
     conteudo, status = ler_documento(arquivo)
 
