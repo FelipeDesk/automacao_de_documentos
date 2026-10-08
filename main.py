@@ -5,6 +5,8 @@ from leitor import ler_documento
 from leitor_xml import processar_xml
 from normalizador import normalizar_resultado
 from validador import validar_resultado
+from extrator_nfe_pdf import extrair_nfe_pdf
+from classificador_fiscal import identificar_tipo_pdf
 
 pasta_entrada = Path('entrada')
 pasta_resultados = Path("resultados")
@@ -31,30 +33,38 @@ for arquivo in arquivos:
     if not arquivo.is_file():
         continue
 
-    if arquivo.suffix.lower() == ".xml":
-        resultado = processar_xml(arquivo)
+    if arquivo.suffix.lower() == ".pdf":
+        texto, status = ler_documento(arquivo)
 
-        if resultado is None:
+        if status != "sucesso":
+            print(f"Não foi possível ler: {arquivo.name}")
+            continue
+
+        tipo = identificar_tipo_pdf(texto)
+
+        if tipo == "desconhecido":
             print(
-                f"XML não reconhecido: {arquivo.name}"
+                f"Documento ignorado: {arquivo.name} "
+                f"(não identificado como nota fiscal)"
             )
             continue
 
-        resultado = normalizar_resultado(resultado)
+        if tipo == "nfe":
+            resultado = extrair_nfe_pdf(texto)
 
-        validacoes = validar_resultado(resultado)
+            resultado = normalizar_resultado(resultado)
 
-        resultado["validacoes"] = validacoes
+            validacoes = validar_resultado(resultado)
+            resultado["validacoes"] = validacoes
 
-        salvar_resultado(
-            resultado,
-            arquivo,
-            pasta_resultados
-        )
+            salvar_resultado(
+                resultado,
+                arquivo,
+                pasta_resultados
+            )
 
-        print(f"Processado com sucesso: {arquivo.name}")
-
-        continue
+            print(f"{arquivo.name} processado com sucesso.")
+            continue
 
     conteudo, status = ler_documento(arquivo)
 

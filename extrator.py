@@ -10,6 +10,9 @@ def extrair_cpfs(texto):
 
 def validar_cpf(cpf):
 
+    if not cpf:
+        return False
+
     # Remove pontos, hífen e qualquer caractere que não seja número
     cpf = re.sub(r"\D", "", cpf)
 
@@ -62,6 +65,10 @@ def extrair_cnpjs(texto):
     return cnpjs
 
 def validar_cnpj(cnpj):
+    
+    if not cnpj:
+        return False
+    
     cnpj = re.sub(r"\D", "", cnpj)
 
     if len(cnpj) != 14:
