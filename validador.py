@@ -1,5 +1,93 @@
-from extrator import validar_cpf, validar_cnpj
 import re
+
+def validar_cpf(cpf):
+
+    if not cpf:
+        return False
+
+    # Remove pontos, hífen e qualquer caractere que não seja número
+    cpf = re.sub(r"\D", "", cpf)
+
+    # CPF precisa possuir exatamente 11 números
+    if len(cpf) != 11:
+        return False
+
+    # Elimina CPFs com todos os números iguais
+    if cpf == cpf[0] * 11:
+        return False
+
+
+    # PRIMEIRO DÍGITO
+
+    soma = 0
+
+    for i in range(9):
+        soma += int(cpf[i]) * (10 - i)
+
+    resto = soma % 11
+
+    primeiro_digito = 0 if resto < 2 else 11 - resto
+
+    if primeiro_digito != int(cpf[9]):
+        return False
+
+
+    # SEGUNDO DÍGITO
+
+    soma = 0
+
+    for i in range(10):
+        soma += int(cpf[i]) * (11 - i)
+
+    resto = soma % 11
+
+    segundo_digito = 0 if resto < 2 else 11 - resto
+
+    if segundo_digito != int(cpf[10]):
+        return False
+
+    return True
+
+def validar_cnpj(cnpj):
+    
+    if not cnpj:
+        return False
+    
+    cnpj = re.sub(r"\D", "", cnpj)
+
+    if len(cnpj) != 14:
+        return False
+
+    if cnpj == cnpj[0] * 14:
+        return False
+
+    pesos_primeiro = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+
+    soma = 0
+
+    for i in range(12):
+        soma += int(cnpj[i]) * pesos_primeiro[i]
+
+    resto = soma % 11
+    primeiro_digito = 0 if resto < 2 else 11 - resto
+
+    if primeiro_digito != int(cnpj[12]):
+        return False
+
+    pesos_segundo = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+
+    soma = 0
+
+    for i in range(13):
+        soma += int(cnpj[i]) * pesos_segundo[i]
+
+    resto = soma % 11
+    segundo_digito = 0 if resto < 2 else 11 - resto
+
+    if segundo_digito != int(cnpj[13]):
+        return False
+
+    return True
 
 def validar_documento(documento):
     if not documento:
@@ -47,8 +135,8 @@ def validar_chave_acesso(chave):
     return digito_calculado == digito_informado
 
 def validar_resultado(resultado):
-    emitente = resultado.get("emitente", {})
-    destinatario = resultado.get("destinatario", {})
+    emitente = resultado.get("emitente") or {}
+    destinatario = resultado.get("destinatario") or {}
 
     tipo = resultado.get("tipo")
 

@@ -1,86 +1,45 @@
+from pathlib import Path
 from pypdf import PdfReader
-from docx import Document
-from ocr import extrair_texto_imagem
-from ocr import extrair_texto_imagem, aplicar_ocr_pagina_pdf
+
+from ocr import aplicar_ocr_pagina_pdf
+
 
 def texto_util(texto):
     if not texto:
         return False
 
-    texto = texto.strip()
+    return len(texto.strip()) >= 20
 
-    if len(texto) < 20:
-        return False
-
-    return True
-
-def ler_txt(caminho):
-    return caminho.read_text(encoding="utf-8")
 
 def ler_pdf(caminho):
     leitor = PdfReader(caminho)
 
-    texto_completo = ""
+    partes_texto = []
 
     for numero_pagina, pagina in enumerate(leitor.pages):
-    
-        texto_pagina = pagina.extract_text()
+        texto_pagina = pagina.extract_text() or ""
 
-        if texto_util(texto_pagina):
-            texto_completo += texto_pagina + "\n"
-
-        else:
-            texto_ocr = aplicar_ocr_pagina_pdf(
+        if not texto_util(texto_pagina):
+            texto_pagina = aplicar_ocr_pagina_pdf(
                 caminho,
                 numero_pagina
             )
 
-            if texto_util(texto_ocr):
-                texto_completo += texto_ocr + "\n"
+        if texto_util(texto_pagina):
+            partes_texto.append(texto_pagina)
 
-    return texto_completo
+    return "\n".join(partes_texto)
 
-def ler_docx(caminho):
-    documento = Document(caminho)
-
-    texto = ""
-
-    for paragrafo in documento.paragraphs:
-        texto += paragrafo.text + "\n"
-
-    return texto
 
 def ler_documento(caminho):
+    caminho = Path(caminho)
 
-    extensao = caminho.suffix.lower()
+    if caminho.suffix.lower() != ".pdf":
+        return None, "formato_nao_suportado"
 
-    if extensao == ".txt":
-        texto = ler_txt(caminho)
+    texto = ler_pdf(caminho)
 
+    if texto_util(texto):
         return texto, "sucesso"
 
-    if extensao == ".pdf":
-        texto = ler_pdf(caminho)
-
-        if texto_util(texto):
-            return texto, "sucesso"
-
-        return None, "ocr_falhou"
-
-    if extensao in [".jpg", ".jpeg", ".png"]:
-        texto = extrair_texto_imagem(caminho)
-
-        if texto_util(texto):
-            return texto, "sucesso"
-
-        return None, "ocr_falhou"
-
-    if extensao == ".docx":
-        texto = ler_docx(caminho)
-
-        if texto_util(texto):
-            return texto, "sucesso"
-
-        return None, "texto_nao_encontrado"
-
-    return None, "formato_nao_suportado"
+    return None, "texto_nao_encontrado"

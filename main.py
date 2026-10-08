@@ -1,28 +1,27 @@
 import json
 from pathlib import Path
-from extrator import extrair_cpfs, validar_cpf, extrair_cnpjs, validar_cnpj, extrair_datas, validar_data, extrair_valores
+
 from leitor import ler_documento
 from leitor_xml import processar_xml
+from classificador_fiscal import identificar_tipo_pdf
+from extrator_nfe_pdf import extrair_nfe_pdf
+from extrator_nfse_pdf import extrair_nfse_pdf
 from normalizador import normalizar_resultado
 from validador import validar_resultado
-from extrator_nfe_pdf import extrair_nfe_pdf
-from classificador_fiscal import identificar_tipo_pdf
-from extrator_nfse_pdf import extrair_nfse_pdf
 
-pasta_entrada = Path('entrada')
-pasta_resultados = Path("resultados")
 
-arquivos = pasta_entrada.iterdir()
+BASE_DIR = Path(__file__).resolve().parent
+PASTA_ENTRADA = BASE_DIR / "entrada"
+PASTA_RESULTADOS = BASE_DIR / "resultados"
 
-def salvar_resultado(resultado, arquivo, pasta_resultados):
-    nome_resultado = arquivo.stem + ".json"
-    caminho_resultado = pasta_resultados / nome_resultado
 
-    with open(
-        caminho_resultado,
-        "w",
-        encoding="utf-8"
-    ) as arquivo_json:
+def salvar_resultado(resultado, arquivo):
+    PASTA_RESULTADOS.mkdir(exist_ok=True)
+
+    nome = f"{arquivo.stem}_{arquivo.suffix[1:].lower()}.json"
+    caminho = PASTA_RESULTADOS / nome
+
+    with open(caminho, "w", encoding="utf-8") as arquivo_json:
         json.dump(
             resultado,
             arquivo_json,
@@ -30,116 +29,78 @@ def salvar_resultado(resultado, arquivo, pasta_resultados):
             ensure_ascii=False
         )
 
-for arquivo in arquivos:
-    if not arquivo.is_file():
-        continue
 
-    if arquivo.suffix.lower() == ".pdf":
+def dados_minimos_presentes(resultado):
+    emitente = resultado.get("emitente") or {}
+
+    return (
+        bool(resultado.get("numero_nota"))
+        and bool(emitente.get("cnpj"))
+        and resultado.get("valor_total") is not None
+    )
+
+
+def extrair_dados(arquivo):
+    extensao = arquivo.suffix.lower()
+
+    if extensao == ".xml":
+        return processar_xml(arquivo)
+
+    if extensao == ".pdf":
         texto, status = ler_documento(arquivo)
 
         if status != "sucesso":
             print(f"Não foi possível ler: {arquivo.name}")
-            continue
+            return None
 
         tipo = identificar_tipo_pdf(texto)
 
-        if tipo == "desconhecido":
-            print(
-                f"Documento ignorado: {arquivo.name} "
-                f"(não identificado como nota fiscal)"
-            )
-            continue
-
         if tipo == "nfe":
-            resultado = extrair_nfe_pdf(texto)
+            return extrair_nfe_pdf(texto)
 
-        elif tipo == "nfse":
-            resultado = extrair_nfse_pdf(texto)
+        if tipo == "nfse":
+            return extrair_nfse_pdf(texto)
 
-        else:
-            print(
-                f"Documento não identificado: {arquivo.name}"
-            )
-            continue
+    return None
+
+
+def processar_arquivo(arquivo):
+    if arquivo.suffix.lower() not in {".xml", ".pdf"}:
+        print(f"Formato ignorado: {arquivo.name}")
+        return
+
+    try:
+        resultado = extrair_dados(arquivo)
+
+        if resultado is None:
+            print(f"Documento não reconhecido: {arquivo.name}")
+            return
 
         resultado = normalizar_resultado(resultado)
 
-        validacoes = validar_resultado(resultado)
-        resultado["validacoes"] = validacoes
+        if not dados_minimos_presentes(resultado):
+            print(f"Dados fiscais insuficientes: {arquivo.name}")
+            return
 
-        salvar_resultado(
-            resultado,
-            arquivo,
-            pasta_resultados
-        )
+        resultado["validacoes"] = validar_resultado(resultado)
 
-        print(f"{arquivo.name} processado com sucesso.")
-        continue
+        salvar_resultado(resultado, arquivo)
 
-    conteudo, status = ler_documento(arquivo)
+        print(f"Processado com sucesso: {arquivo.name}")
 
-    if status == "formato_nao_suportado":
-        print(f"Formato não suportado: {arquivo.name}")
-        continue
+    except Exception as erro:
+        print(f"Erro ao processar {arquivo.name}: {erro}")
 
-    if status == "ocr_necessario":
-        print(f"OCR necessário: {arquivo.name}")
-        continue
 
-    if status == "ocr_falhou":
-        print(f"OCR não conseguiu extrair texto: {arquivo.name}")
-        continue
+def main():
+    if not PASTA_ENTRADA.exists():
+        print("Pasta de entrada não encontrada.")
+        return
 
-    if status == "texto_nao_encontrado":
-        print(f"Texto não encontrado: {arquivo.name}")
-        continue
+    for arquivo in sorted(PASTA_ENTRADA.iterdir()):
+        if arquivo.is_file():
+            processar_arquivo(arquivo)
 
-    cpfs = extrair_cpfs(conteudo)
-    cnpjs = extrair_cnpjs(conteudo)
-    datas = extrair_datas(conteudo)
-    valores = extrair_valores(conteudo)
 
-    cpfs_encontrados = []
-    cnpjs_encontrados = []
-    datas_encontradas = []
-
-    for cpf in cpfs:
-
-        dados_cpf = {
-            "numero": cpf,
-            "valido": validar_cpf(cpf)
-        }
-
-        cpfs_encontrados.append(dados_cpf)
-
-    for cnpj in cnpjs:
-        dados_cnpj = {
-            "numero": cnpj,
-            "valido": validar_cnpj(cnpj)
-        }
-
-        cnpjs_encontrados.append(dados_cnpj)
-
-    for data in datas:
-        dados_data = {
-            "valor": data,
-            "valida": validar_data(data)
-        }
-
-        datas_encontradas.append(dados_data)
-
-    resultado = {
-        "arquivo": arquivo.name,
-        "cpfs": cpfs_encontrados,
-        "cnpjs": cnpjs_encontrados,
-        "datas": datas_encontradas,
-        "valores": valores
-    }
-
-    salvar_resultado(
-        resultado,
-        arquivo,
-        pasta_resultados
-    )
-
-    print(f"Processado com sucesso: {arquivo.name}")
+if __name__ == "__main__":
+    main()
