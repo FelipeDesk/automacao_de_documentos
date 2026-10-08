@@ -1,19 +1,18 @@
 import json
 from pathlib import Path
 
-from leitor import ler_documento
-from leitor_xml import processar_xml
-from classificador_fiscal import identificar_tipo_pdf
-from extrator_nfe_pdf import extrair_nfe_pdf
-from extrator_nfse_pdf import extrair_nfse_pdf
-from normalizador import normalizar_resultado
-from validador import validar_resultado
+from processamento.leitor import ler_documento
+from processamento.leitor_xml import processar_xml
+from processamento.classificador_fiscal import identificar_tipo_pdf
+from processamento.normalizador import normalizar_resultado
+from processamento.validador import validar_resultado
 
+from extratores.nfe_pdf import extrair_nfe_pdf
+from extratores.nfse_pdf import extrair_nfse_pdf
 
 BASE_DIR = Path(__file__).resolve().parent
 PASTA_ENTRADA = BASE_DIR / "entrada"
 PASTA_RESULTADOS = BASE_DIR / "resultados"
-
 
 def salvar_resultado(resultado, arquivo):
     PASTA_RESULTADOS.mkdir(exist_ok=True)

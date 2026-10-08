@@ -1,8 +1,7 @@
 from pathlib import Path
 from pypdf import PdfReader
 
-from ocr import aplicar_ocr_pagina_pdf
-
+from processamento.ocr import aplicar_ocr_pagina_pdf
 
 def texto_util(texto):
     if not texto:

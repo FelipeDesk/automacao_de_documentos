@@ -1,7 +1,6 @@
 import re
 import unicodedata
 
-
 def limpar_texto(texto):
     texto = unicodedata.normalize("NFKD", texto)
 

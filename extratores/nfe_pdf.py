@@ -1,6 +1,4 @@
 import re
-import json
-from leitor import ler_pdf
 
 def extrair_chave_acesso(texto):
     padrao = r"CHAVE DE ACESSO\s*([0-9 \t]+)"
