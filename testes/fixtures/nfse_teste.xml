@@ -1,0 +1,6 @@
+<CompNfse xmlns="http://www.abrasf.org.br/nfse.xsd"><Nfse><InfNfse>
+<Numero>87352173</Numero><DataEmissao>2026-01-21</DataEmissao>
+<PrestadorServico><IdentificacaoPrestador><Cnpj>00000000000000</Cnpj></IdentificacaoPrestador><RazaoSocial>Empresa Ficticia de Servicos</RazaoSocial></PrestadorServico>
+<TomadorServico><IdentificacaoTomador><CpfCnpj><Cpf>00000000000</Cpf></CpfCnpj></IdentificacaoTomador><RazaoSocial>Cliente Ficticio</RazaoSocial></TomadorServico>
+<Servico><Valores><ValorServicos>162.57</ValorServicos><ValorLiquidoNfse>157.57</ValorLiquidoNfse><ValorIss>5.00</ValorIss></Valores><Discriminacao>DOCUMENTO FICTICIO SEM VALIDADE FISCAL</Discriminacao></Servico>
+</InfNfse></Nfse></CompNfse>

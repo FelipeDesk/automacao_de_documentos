@@ -1,0 +1,8 @@
+<NFe xmlns="http://www.portalfiscal.inf.br/nfe"><infNFe Id="NFe11111111111111111111111111111111111111111111">
+<ide><nNF>12345</nNF><dhEmi>2026-01-20T12:00:00-03:00</dhEmi></ide>
+<emit><CNPJ>00000000000000</CNPJ><xNome>Empresa Ficticia de Testes</xNome></emit>
+<dest><CPF>00000000000</CPF><xNome>Cliente Ficticio</xNome></dest>
+<total><ICMSTot><vNF>150.75</vNF></ICMSTot></total>
+<cobr><dup><dVenc>2026-02-20</dVenc></dup></cobr>
+<infAdic><infCpl>DOCUMENTO FICTICIO SEM VALIDADE FISCAL</infCpl></infAdic>
+</infNFe></NFe>
