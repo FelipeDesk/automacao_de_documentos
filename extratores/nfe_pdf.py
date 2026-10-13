@@ -15,10 +15,6 @@ def extrair_chave_acesso(texto):
     chave = re.sub(r"\D", "", resultado.group(1))
 
     if len(chave) != 44:
-        print(
-            f"Chave encontrada, mas possui "
-            f"{len(chave)} dígitos. Esperado: 44."
-        )
         return None
 
     return chave
