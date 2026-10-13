@@ -153,4 +153,7 @@ def normalizar_resultado(resultado):
         )
     }
 
+    for campo in ("valor_liquido", "valor_iss", "base_calculo_iss", "aliquota_iss"):
+        resultado_normalizado[campo] = normalizar_valor(resultado.get(campo))
+    resultado_normalizado["iss_retido"] = resultado.get("iss_retido")
     return resultado_normalizado

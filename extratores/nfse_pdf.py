@@ -1,4 +1,5 @@
 import re
+import unicodedata
 
 def buscar_campo(texto, padroes):
     for padrao in padroes:
@@ -65,7 +66,8 @@ def extrair_bloco_prestador(texto):
         [
             r"DADOS DO PRESTADOR",
             r"PRESTADOR DE SERVIÇOS",
-            r"PRESTADOR DO SERVIÇO"
+            r"PRESTADOR DO SERVIÇO",
+            r"EMITENTE DA NFS-e"
         ],
         [
             r"DADOS DO TOMADOR",
@@ -144,7 +146,7 @@ def extrair_data_emissao_nfse(texto):
 
 def extrair_valor_total_nfse(texto):
     padroes = [
-        r"VALOR LÍQUIDO DA NFS-E\s*\n[^\n]*?R\$\s*([\d.,]+)",
+        r"VALOR (?:TOTAL DOS SERVI[ÇC]OS|DOS SERVI[ÇC]OS|DO SERVI[ÇC]O)\s*:?\s*(?:R\$\s*)?([\d.,]+)",
         r"VALOR TOTAL DA NFS-E.*?VALOR DO SERVIÇO.*?\n\s*R\$\s*([\d.,]+)",
         r"VALOR TOTAL DOS SERVIÇOS\s*:?\s*(?:R\$\s*)?([\d.,]+)"
     ]
@@ -162,6 +164,10 @@ def extrair_valor_total_nfse(texto):
     return None
 
 def extrair_nfse_pdf(texto):
+    # Normaliza acentos preservando caixa e nomes para aceitar OCR sem diacriticos.
+    texto = unicodedata.normalize("NFC", texto)
+    for sem, com in [("SERVICOS", "SERVIÇOS"), ("SERVICO", "SERVIÇO"), ("RAZAO", "RAZÃO"), ("EMISSAO", "EMISSÃO"), ("LIQUIDO", "LÍQUIDO"), ("DISCRIMINACAO", "DISCRIMINAÇÃO")]:
+        texto = re.sub(sem, com, texto, flags=re.IGNORECASE)
     return {
         "tipo": "nfse",
         "numero_nota": extrair_numero_nfse(texto),
@@ -172,5 +178,10 @@ def extrair_nfse_pdf(texto):
 
         "data_emissao": extrair_data_emissao_nfse(texto),
         "data_vencimento": None,
-        "valor_total": extrair_valor_total_nfse(texto)
+        "valor_total": extrair_valor_total_nfse(texto),
+        "valor_liquido": buscar_campo(texto, [r"VALOR LÍQUIDO(?: DA NFS-E| DA NOTA)?\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
+        "valor_iss": buscar_campo(texto, [r"(?:VALOR DO ISS(?:QN)?|ISS(?:QN)?)\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
+        "base_calculo_iss": buscar_campo(texto, [r"BASE DE CÁLCULO(?: DO ISS)?\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
+        "aliquota_iss": buscar_campo(texto, [r"AL[ÍI]QUOTA(?: DO ISS)?\s*:?\s*([\d.,]+)\s*%"]),
+        "iss_retido": buscar_campo(texto, [r"ISS RETIDO\s*:?\s*(SIM|NÃO|NAO)"])
     }
