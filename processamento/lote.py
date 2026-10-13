@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from processamento.pipeline import EXTENSOES, processar_documento
+from processamento.banco import Banco
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,7 @@ def gravar_json(caminho, dados):
 
 
 def ler_registros(base):
-    pasta = Path(base) / 'resultados' / 'registros'
-    return [json.loads(p.read_text(encoding='utf-8')) for p in sorted(pasta.glob('*.json'))]
+    return Banco(Path(base) / 'notas.sqlite3').listar(limite=-1)
 
 
 def celula_segura(valor):
@@ -56,8 +56,12 @@ def processar_recebido(arquivo, base):
     arquivo, base = Path(arquivo), Path(base)
     digest = hashlib.sha256(arquivo.read_bytes()).hexdigest()
     destino = base / 'resultados' / 'registros' / f'{digest}.json'
-    if destino.exists():
-        return {**json.loads(destino.read_text(encoding='utf-8')), 'duplicado': True}
+    banco = Banco(base / 'notas.sqlite3')
+    existente = banco.obter(digest)
+    if existente:
+        gravar_json(destino, existente)
+        exportar_csv(base)
+        return {**existente, 'duplicado': True}
     registro = {'id': digest, 'origem': arquivo.name, 'status': 'erro', 'dados': None,
                 'erro': None, 'processado_em': datetime.now(timezone.utc).isoformat(), 'duplicado': False}
     try:
@@ -68,6 +72,8 @@ def processar_recebido(arquivo, base):
         registro['status'] = 'sucesso' if dados['avaliacao']['status_extracao'] == 'completo' else 'revisao_necessaria'
     except Exception as erro:
         registro['erro'] = f'Falha de leitura ou extração ({type(erro).__name__}). Verifique formato, integridade, layout e configuração de OCR.'
+    registro = banco.salvar(registro)
+    destino = base / 'resultados' / 'registros' / f"{registro['id']}.json"
     gravar_json(destino, registro)
     exportar_csv(base)
     logger.info('documento=%s metodo=%s status=%s', digest[:12], (registro['dados'] or {}).get('metadados', {}).get('metodo', 'indisponivel'), registro['status'])
