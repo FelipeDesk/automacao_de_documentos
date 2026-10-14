@@ -199,6 +199,7 @@ def extrair_nfe_pdf(texto):
         "data_emissao": extrair_data_emissao(texto),
 
         "data_vencimento": extrair_data_vencimento(texto),
+        "vencimentos": re.findall(r"(?:VENCIMENTO|DT\.\s*VENC\.?)\s*(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE),
 
         "valor_total": extrair_valor_total(texto)
     }

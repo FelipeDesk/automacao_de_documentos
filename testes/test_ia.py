@@ -34,3 +34,28 @@ def test_ia_timeout(monkeypatch):
     dados, meta = completar_com_ia({'tipo':'nfse'}, 'Nota 42', {'elegivel_ia':True})
     assert meta['erro'] == 'TimeoutError'
     assert meta['chamadas'] == 1
+
+
+def test_ia_json_invalido(monkeypatch):
+    habilitar(monkeypatch)
+    monkeypatch.setattr('processamento.ia.chamar_api', lambda *a: {'status':'completed', 'output':[{'content':[{'type':'output_text','text':'não é JSON'}]}]})
+    original = {'tipo':'nfse'}
+    dados, meta = completar_com_ia(original, 'Nota 42', {'elegivel_ia':True})
+    assert dados == original
+    assert meta['erro'] == 'JSONDecodeError'
+
+
+def test_ia_nao_chama_se_completa(monkeypatch):
+    habilitar(monkeypatch)
+    assert completar_com_ia({'tipo':'nfse'}, 'Nota 42', {'elegivel_ia':False})[1]['chamadas'] == 0
+
+
+def test_ia_aceita_mas_exige_conferencia(documento_ficticio, monkeypatch):
+    from processamento.pipeline import processar_documento
+    habilitar(monkeypatch)
+    def completar(dados, *args):
+        return dados, {'utilizada':True, 'chamadas':1, 'campos_aceitos':['numero_nota'], 'erro':None}
+    monkeypatch.setattr('processamento.pipeline.completar_com_ia', completar)
+    dados = processar_documento(documento_ficticio('pdf'))
+    assert dados['avaliacao']['status_extracao'] == 'revisao_necessaria'
+    assert 'conferir_campos_extraidos_por_ia' in dados['avaliacao']['inconsistencias']

@@ -27,3 +27,12 @@ def test_upload_invalido(tmp_path, monkeypatch):
     assert cliente.post('/api/upload', files={'arquivo':('nota.xml', b'')}).status_code == 400
     monkeypatch.setattr('api.MAX_UPLOAD', 5)
     assert cliente.post('/api/upload', files={'arquivo':('nota.xml', XML)}).status_code == 413
+
+
+def test_api_registra_xml_corrompido_e_rejeita_entidades(tmp_path):
+    cliente = TestClient(criar_app(tmp_path))
+    resposta = cliente.post('/api/upload', files={'arquivo':('ruim.xml', b'<NFe')})
+    assert resposta.status_code == 200
+    assert resposta.json()['status'] == 'erro'
+    assert cliente.get('/api/notas').json()[0]['erro']
+    assert cliente.post('/api/upload', files={'arquivo':('entidade.xml', b'<!DOCTYPE a><a/>')}).status_code == 400

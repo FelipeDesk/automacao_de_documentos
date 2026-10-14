@@ -24,3 +24,11 @@ def test_sem_chave_nao_colide(tmp_path):
     banco.salvar(registro('a', None))
     banco.salvar(registro('b', None))
     assert len(banco.listar()) == 2
+
+
+def test_hash_alternativo_aponta_para_mesma_nota(tmp_path):
+    banco = Banco(tmp_path / 'notas.sqlite3')
+    banco.salvar(registro('a'))
+    banco.salvar(registro('b'))
+    assert banco.obter('b')['id'] == 'a'
+    assert len(banco.listar()) == 1

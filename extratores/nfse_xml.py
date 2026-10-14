@@ -1,4 +1,4 @@
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 
 
 NAMESPACE = {
@@ -95,5 +95,8 @@ def extrair_nfse_xml(caminho):
 
         "data_emissao": data_emissao,
         "data_vencimento": None,
-        "valor_total": valor_total
+        "valor_total": valor_total,
+        "valor_liquido": obter_texto(inf_nfse, "nfse:Servico/nfse:Valores/nfse:ValorLiquidoNfse"),
+        "valor_iss": obter_texto(inf_nfse, "nfse:Servico/nfse:Valores/nfse:ValorIss"),
+        "base_calculo_iss": obter_texto(inf_nfse, "nfse:Servico/nfse:Valores/nfse:BaseCalculo")
     }

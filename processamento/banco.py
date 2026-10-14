@@ -16,6 +16,9 @@ class Banco:
                 cnpj_emitente TEXT, data_emissao TEXT, valor_total REAL, origem TEXT NOT NULL,
                 metodo TEXT, status TEXT NOT NULL, processado_em TEXT NOT NULL, registro TEXT NOT NULL)''')
 
+            conexao.execute('CREATE TABLE IF NOT EXISTS arquivos (hash TEXT PRIMARY KEY, nota_id TEXT NOT NULL REFERENCES notas(id))')
+            conexao.execute('INSERT OR IGNORE INTO arquivos SELECT id, id FROM notas')
+
     @contextmanager
     def conectar(self):
         conexao = sqlite3.connect(self.caminho, timeout=30)
@@ -28,7 +31,7 @@ class Banco:
 
     def obter(self, identificador):
         with self.conectar() as conexao:
-            linha = conexao.execute('SELECT registro FROM notas WHERE id = ?', (identificador,)).fetchone()
+            linha = conexao.execute('SELECT registro FROM notas WHERE id = (SELECT nota_id FROM arquivos WHERE hash = ?)', (identificador,)).fetchone()
         return json.loads(linha['registro']) if linha else None
 
     def listar(self, tipo=None, busca='', limite=100, deslocamento=0):
@@ -57,10 +60,13 @@ class Banco:
             conexao.execute('BEGIN IMMEDIATE')
             existente = conexao.execute('SELECT registro FROM notas WHERE id = ? OR chave_fiscal = ?', (registro['id'], fiscal)).fetchone()
             if existente:
-                return {**json.loads(existente['registro']), 'duplicado': True}
+                original = json.loads(existente['registro'])
+                conexao.execute('INSERT OR IGNORE INTO arquivos VALUES (?, ?)', (registro['id'], original['id']))
+                return {**original, 'duplicado': True}
             conexao.execute('INSERT INTO notas VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 (registro['id'], fiscal, dados.get('tipo'), dados.get('numero_nota'), cnpj,
                  dados.get('data_emissao'), dados.get('valor_total'), registro['origem'],
                  dados.get('metadados', {}).get('metodo'), registro['status'], registro['processado_em'],
                  json.dumps(registro, ensure_ascii=False, allow_nan=False)))
+            conexao.execute('INSERT INTO arquivos VALUES (?, ?)', (registro['id'], registro['id']))
         return registro

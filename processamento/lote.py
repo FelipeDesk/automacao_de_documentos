@@ -59,6 +59,7 @@ def processar_recebido(arquivo, base):
     banco = Banco(base / 'notas.sqlite3')
     existente = banco.obter(digest)
     if existente:
+        destino = base / 'resultados' / 'registros' / f"{existente['id']}.json"
         gravar_json(destino, existente)
         exportar_csv(base)
         return {**existente, 'duplicado': True}
