@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from processamento.pipeline import EXTENSOES, processar_documento
+from processamento.pipeline import EXTENSOES, VERSAO_EXTRACAO, processar_documento
 from processamento.banco import Banco
 
 logger = logging.getLogger(__name__)
@@ -58,13 +58,15 @@ def processar_recebido(arquivo, base):
     destino = base / 'resultados' / 'registros' / f'{digest}.json'
     banco = Banco(base / 'notas.sqlite3')
     existente = banco.obter(digest)
-    if existente:
+    reavaliar = bool(existente and existente.get('versao_extracao', 1) < VERSAO_EXTRACAO
+                     and existente['status'] != 'sucesso')
+    if existente and not reavaliar:
         destino = base / 'resultados' / 'registros' / f"{existente['id']}.json"
         gravar_json(destino, existente)
         exportar_csv(base)
         return {**existente, 'duplicado': True}
     registro = {'id': digest, 'origem': arquivo.name, 'status': 'erro', 'dados': None,
-                'erro': None, 'processado_em': datetime.now(timezone.utc).isoformat(), 'duplicado': False}
+                'erro': None, 'versao_extracao': VERSAO_EXTRACAO, 'processado_em': datetime.now(timezone.utc).isoformat(), 'duplicado': False}
     try:
         if arquivo.suffix.lower() not in EXTENSOES:
             raise ValueError('formato_nao_suportado')
@@ -73,7 +75,7 @@ def processar_recebido(arquivo, base):
         registro['status'] = 'sucesso' if dados['avaliacao']['status_extracao'] == 'completo' else 'revisao_necessaria'
     except Exception as erro:
         registro['erro'] = f'Falha de leitura ou extração ({type(erro).__name__}). Verifique formato, integridade, layout e configuração de OCR.'
-    registro = banco.salvar(registro)
+    registro = banco.salvar(registro, atualizar=reavaliar)
     destino = base / 'resultados' / 'registros' / f"{registro['id']}.json"
     gravar_json(destino, registro)
     exportar_csv(base)

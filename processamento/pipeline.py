@@ -10,6 +10,8 @@ from processamento.ia import completar_com_ia
 from extratores.nfe_pdf import extrair_nfe_pdf
 from extratores.nfse_pdf import extrair_nfse_pdf
 
+VERSAO_EXTRACAO = 2
+
 EXTENSOES = {'.xml', '.pdf', '.png', '.jpg', '.jpeg'}
 
 

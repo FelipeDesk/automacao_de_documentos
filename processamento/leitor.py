@@ -10,7 +10,7 @@ def texto_util(texto):
 def ler_pdf(caminho, metadados=None):
     partes = []
     for numero, pagina in enumerate(PdfReader(caminho).pages):
-        texto = pagina.extract_text() or ''
+        texto = (pagina.extract_text(extraction_mode='layout') or '') if pagina.get('/Contents') is not None else ''
         if not texto_util(texto):
             texto = aplicar_ocr_pagina_pdf(caminho, numero)
             if metadados is not None:

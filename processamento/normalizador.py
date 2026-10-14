@@ -58,7 +58,7 @@ def normalizar_valor(valor):
         return numero if math.isfinite(numero) else None
 
     valor = valor.strip()
-    valor = valor.replace("R$", "").strip()
+    valor = valor.replace("R$", "").replace("%", "").strip()
 
     if "," in valor:
         valor = valor.replace(".", "")

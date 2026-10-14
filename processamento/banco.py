@@ -48,7 +48,7 @@ class Banco:
         with self.conectar() as conexao:
             return [json.loads(linha['registro']) for linha in conexao.execute(sql, parametros)]
 
-    def salvar(self, registro):
+    def salvar(self, registro, atualizar=False):
         dados = registro.get('dados') or {}
         chave = dados.get('chave_acesso')
         # Chaves NF-e inválidas não são identidades confiáveis.
@@ -61,6 +61,15 @@ class Banco:
             existente = conexao.execute('SELECT registro FROM notas WHERE id = ? OR chave_fiscal = ?', (registro['id'], fiscal)).fetchone()
             if existente:
                 original = json.loads(existente['registro'])
+                if atualizar and original['id'] == registro['id']:
+                    conexao.execute('''UPDATE notas SET chave_fiscal=?, tipo=?, numero_nota=?,
+                        cnpj_emitente=?, data_emissao=?, valor_total=?, origem=?, metodo=?, status=?,
+                        processado_em=?, registro=? WHERE id=?''',
+                        (fiscal, dados.get('tipo'), dados.get('numero_nota'), cnpj,
+                         dados.get('data_emissao'), dados.get('valor_total'), registro['origem'],
+                         dados.get('metadados', {}).get('metodo'), registro['status'], registro['processado_em'],
+                         json.dumps(registro, ensure_ascii=False, allow_nan=False), registro['id']))
+                    return registro
                 conexao.execute('INSERT OR IGNORE INTO arquivos VALUES (?, ?)', (registro['id'], original['id']))
                 return {**original, 'duplicado': True}
             conexao.execute('INSERT INTO notas VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',

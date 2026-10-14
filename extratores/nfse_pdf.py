@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from extratores.campos_layout import campo_abaixo, documento_unico, DINHEIRO, DATA
 
 def buscar_campo(texto, padroes):
     for padrao in padroes:
@@ -16,15 +17,15 @@ def buscar_campo(texto, padroes):
 
 def extrair_numero_nfse(texto):
     padroes = [
-        r"N[ÚU]MERO DA NFS-E\s*:?\s*(\d+)",
+        r"N[ÚU]MERO (?:DA )?NFS-E\s*:?\s*(\d+)",
         r"N[ÚU]MERO DA NOTA\s*:?\s*(\d+)",
         r"NFS-E\s*N[º°.]?\s*(\d+)"
     ]
 
-    return buscar_campo(texto, padroes)
+    return campo_abaixo(texto, r"N[ÚU]MERO (?:DA NOTA|(?:DA )?NFS-E)", r"\b\d+\b") or buscar_campo(texto, padroes)
 
 def extrair_chave_nfse(texto):
-    padrao = r"CHAVE DE ACESSO DA NFS-E\s*([\d \t]+)"
+    padrao = r"(?:CHAVE DE ACESSO DA NFS-E|IDENTIFICADOR NACIONAL)\s*:?\s*([\d \t]+)"
 
     resultado = re.search(
         padrao,
@@ -73,7 +74,8 @@ def extrair_bloco_prestador(texto):
             r"DADOS DO TOMADOR",
             r"TOMADOR DE SERVIÇOS",
             r"TOMADOR DO SERVIÇO",
-            r"DISCRIMINAÇÃO DOS SERVIÇOS"
+            r"INTERMEDI[ÁA]RIO DE SERVIÇOS",
+            r"DISCRIMINAÇÃO D[OE]S? SERVIÇOS"
         ]
     )
 
@@ -86,7 +88,8 @@ def extrair_bloco_tomador(texto):
             r"TOMADOR DO SERVIÇO"
         ],
         [
-            r"DISCRIMINAÇÃO DOS SERVIÇOS",
+            r"INTERMEDI[ÁA]RIO DE SERVIÇOS",
+            r"DISCRIMINAÇÃO D[OE]S? SERVIÇOS",
             r"DESCRIÇÃO DOS SERVIÇOS",
             r"VALOR TOTAL DOS SERVIÇOS",
             r"VALORES"
@@ -104,7 +107,7 @@ def extrair_documento_bloco(bloco):
         r"CPF\s*:?\s*([\d./-]+)"
     ]
 
-    return buscar_campo(bloco, padroes)
+    return documento_unico(bloco) or buscar_campo(bloco, padroes)
 
 def extrair_razao_social_bloco(bloco):
     if not bloco:
@@ -116,7 +119,8 @@ def extrair_razao_social_bloco(bloco):
         r"NOME\s*:?[ \t]*([^\r\n]+)"
     ]
 
-    return buscar_campo(bloco, padroes)
+    valor = buscar_campo(bloco, padroes)
+    return re.split(r" {2,}", valor)[0].strip() if valor else None
 
 def extrair_prestador(texto):
     bloco = extrair_bloco_prestador(texto)
@@ -138,15 +142,18 @@ def extrair_tomador(texto):
 def extrair_data_emissao_nfse(texto):
     padroes = [
         r"Emissão da NFS-e\s*(\d{2}/\d{2}/\d{4})",
-        r"Data de Emissão\s*:?\s*(\d{2}/\d{2}/\d{4})",
+        r"Data (?:e Hora )?de Emissão\s*:?\s*(\d{2}/\d{2}/\d{4})",
         r"Data da Emissão\s*:?\s*(\d{2}/\d{2}/\d{4})"
     ]
 
-    return buscar_campo(texto, padroes)
+    return campo_abaixo(texto, r"Data (?:e Hora )?d[ae] Emissão", DATA) or buscar_campo(texto, padroes)
 
 def extrair_valor_total_nfse(texto):
+    tabela = campo_abaixo(texto, r"(?<!Unit\. )VALOR (?:TOTAL D[OE]S? SERVI[ÇC]OS?|SERVI[ÇC]O)\b", DINHEIRO)
+    if tabela:
+        return tabela.replace("R$", "").strip()
     padroes = [
-        r"VALOR (?:TOTAL DOS SERVI[ÇC]OS|DOS SERVI[ÇC]OS|DO SERVI[ÇC]O)\s*:?\s*(?:R\$\s*)?([\d.,]+)",
+        r"VALOR (?:TOTAL D[OE]S? SERVI[ÇC]OS?|DOS SERVI[ÇC]OS|DO SERVI[ÇC]O)\s*[:=]?\s*(?:R\$\s*)?([\d.,]+)",
         r"VALOR TOTAL DA NFS-E.*?VALOR DO SERVIÇO.*?\n\s*R\$\s*([\d.,]+)",
         r"VALOR TOTAL DOS SERVIÇOS\s*:?\s*(?:R\$\s*)?([\d.,]+)"
     ]
@@ -168,6 +175,10 @@ def extrair_nfse_pdf(texto):
     texto = unicodedata.normalize("NFC", texto)
     for sem, com in [("SERVICOS", "SERVIÇOS"), ("SERVICO", "SERVIÇO"), ("RAZAO", "RAZÃO"), ("EMISSAO", "EMISSÃO"), ("LIQUIDO", "LÍQUIDO"), ("DISCRIMINACAO", "DISCRIMINAÇÃO")]:
         texto = re.sub(sem, com, texto, flags=re.IGNORECASE)
+    totais = extrair_secao(
+        texto, [r"(?m:^[ \t]*VALORES[ \t]*$)"],
+        [r"RETENÇÕES FEDERAIS", r"VALORES IBS/CBS", r"OUTRAS INFORMAÇÕES"]
+    ) or texto
     return {
         "tipo": "nfse",
         "numero_nota": extrair_numero_nfse(texto),
@@ -178,10 +189,10 @@ def extrair_nfse_pdf(texto):
 
         "data_emissao": extrair_data_emissao_nfse(texto),
         "data_vencimento": None,
-        "valor_total": extrair_valor_total_nfse(texto),
-        "valor_liquido": buscar_campo(texto, [r"VALOR LÍQUIDO(?: DA NFS-E| DA NOTA)?\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
-        "valor_iss": buscar_campo(texto, [r"(?:VALOR DO ISS(?:QN)?|ISS(?:QN)?)\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
-        "base_calculo_iss": buscar_campo(texto, [r"BASE DE CÁLCULO(?: DO ISS)?\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
-        "aliquota_iss": buscar_campo(texto, [r"AL[ÍI]QUOTA(?: DO ISS)?\s*:?\s*([\d.,]+)\s*%"]),
+        "valor_total": extrair_valor_total_nfse(totais),
+        "valor_liquido": campo_abaixo(totais, r"VALOR L[ÍI]QUIDO", DINHEIRO) or buscar_campo(totais, [r"VALOR LÍQUIDO(?: DA NFS-E| DA NOTA)?\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
+        "valor_iss": campo_abaixo(totais, r"VALOR (?:DO )?ISS\b", DINHEIRO) or buscar_campo(totais, [r"(?:VALOR DO ISS(?:QN)?|ISS(?:QN)?)\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
+        "base_calculo_iss": campo_abaixo(totais, r"BASE DE C[ÁA]LCULO", DINHEIRO) or buscar_campo(totais, [r"BASE DE CÁLCULO(?: DO ISS)?\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
+        "aliquota_iss": campo_abaixo(totais, r"(?:AL[ÍI]QUOTA|ALIQ\. ISS)\s*\(%\)", r"\d+,\d+%?") or buscar_campo(totais, [r"AL[ÍI]QUOTA(?: DO ISS)?\s*:?\s*([\d.,]+)\s*%"]),
         "iss_retido": buscar_campo(texto, [r"ISS RETIDO\s*:?\s*(SIM|NÃO|NAO)"])
     }
