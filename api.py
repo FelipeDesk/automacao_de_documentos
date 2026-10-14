@@ -1,4 +1,5 @@
 """API local síncrona: a resposta do upload já contém o resultado do processamento."""
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -73,4 +74,5 @@ def criar_app(base=None):
     return app
 
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 app = criar_app()

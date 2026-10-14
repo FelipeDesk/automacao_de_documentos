@@ -2,7 +2,6 @@
 import logging
 import os
 from pathlib import Path
-from processamento.avaliador import avaliar_extracao
 from processamento.pipeline import extrair_documento, processar_documento
 from processamento.lote import gravar_json, processar_lote
 

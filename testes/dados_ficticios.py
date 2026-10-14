@@ -64,4 +64,4 @@ def gerar(pasta, incluir_imagens=False):
                 pixmap.pil_save(pasta / 'nfse_imagem.jpg')
                 with pymupdf.open() as scan:
                     scan.new_page().insert_image(pagina.rect, stream=pixmap.tobytes('png'))
-                    scan.save(pasta / 'nfse_escaneada.pdf')
+                    scan.save(pasta / 'nfse_escaneada.pdf', deflate=True)

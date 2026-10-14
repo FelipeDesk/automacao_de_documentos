@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 
 from main import salvar_resultado
-from main import extrair_dados
+from main import extrair_dados, processar_arquivo
 from processamento.normalizador import normalizar_resultado
 from processamento.validador import validar_resultado
 
@@ -64,9 +64,6 @@ def test_salvar_resultado_json(tmp_path, monkeypatch):
     assert resultado["numero_nota"] == "12345"
     assert resultado["valor_total"] == 150.75
 
-import json
-
-from main import processar_arquivo
 
 
 def test_processar_arquivo_com_avaliacao(tmp_path, monkeypatch):
