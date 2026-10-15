@@ -763,3 +763,30 @@ dd {
     min-width: 0;
   }
 }
+
+/* Resumo financeiro e controles da lista. */
+.stats .total-card { background: #eaf4ef; border-color: #c9dfd2; }
+.stats .total-card strong { font-size: clamp(20px, 2.2vw, 30px); color: #206d57; overflow-wrap: anywhere; }
+.list-tools { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 23px 18px; flex-wrap: wrap; }
+.status-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.status-tabs button { border: 1px solid transparent; border-radius: 7px; padding: 9px 12px; color: #687586; background: #f5f7f8; font-size: 12px; }
+.status-tabs button.active { background: #eaf4ef; color: #206d57; border-color: #c9dfd2; }
+.status-tabs span { margin-left: 6px; font-variant-numeric: tabular-nums; }
+.list-tools select { border: 1px solid #dce2e6; border-radius: 6px; padding: 8px; background: #fff; color: #526273; font-size: 12px; }
+.delete-button { border: 1px solid #eedddd; background: #fff; color: #a13d3d; padding: 8px 10px; margin-left: 15px; border-radius: 6px; font-size: 11px; }
+.delete-dialog { max-width: 460px; }
+.delete-dialog h2 { font-size: 25px; margin-top: 14px; }
+.delete-dialog p { font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.danger { color: #fff; background: #a13d3d; border: 1px solid #a13d3d; border-radius: 6px; padding: 10px 15px; font-size: 12px; }
+@media (max-width: 800px) { .list-tools { padding: 0 19px 18px; } .list-tools select { font-size: 16px; } }
+
+.document-name strong { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.row-actions { white-space: nowrap; }
+@media (min-width: 801px) and (max-width: 1400px) {
+  main { padding-left: 26px; padding-right: 26px; }
+  .sidebar { width: 190px; }
+  td, th { padding-left: 12px; padding-right: 12px; }
+  .document-name strong, .document-name small { max-width: 160px; }
+  .delete-button { margin-left: 8px; }
+}

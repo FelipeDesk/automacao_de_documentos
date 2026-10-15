@@ -22,8 +22,12 @@ def campo_abaixo(texto, rotulo, padrao, max_linhas=3):
         for abaixo in linhas[i+1:i+1+max_linhas]:
             if not abaixo.strip():
                 continue
-            cabecalhos = re.split(r' {2,}', linha.strip())
-            celulas = re.split(r' {2,}', abaixo.strip())
+            cabecalhos = re.split(r' {2,}|[ \t]*\|[ \t]*', linha.strip())
+            celulas = re.split(r' {2,}|[ \t]*\|[ \t]*', abaixo.strip())
+            # OCR pode deslocar células vazias para a esquerda. Não atribui a
+            # dedução/tributo de outra coluna a um campo cujo valor está ausente.
+            if len(cabecalhos) > 1 and len(celulas) != len(cabecalhos):
+                break
             if len(cabecalhos) > 1 and len(cabecalhos) == len(celulas):
                 indices = [j for j, c in enumerate(cabecalhos) if re.search(rotulo, c, re.I)]
                 if len(indices) == 1:

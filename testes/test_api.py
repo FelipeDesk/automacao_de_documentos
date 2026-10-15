@@ -36,3 +36,20 @@ def test_api_registra_xml_corrompido_e_rejeita_entidades(tmp_path):
     assert resposta.json()['status'] == 'erro'
     assert cliente.get('/api/notas').json()[0]['erro']
     assert cliente.post('/api/upload', files={'arquivo':('entidade.xml', b'<!DOCTYPE a><a/>')}).status_code == 400
+
+
+def test_excluir_nota_remove_exportacoes_e_permite_reenvio(tmp_path):
+    cliente = TestClient(criar_app(tmp_path))
+    nota = cliente.post('/api/upload', files={'arquivo': ('nota.xml', XML)}).json()
+    identificador = nota['id']
+    assert cliente.delete(f'/api/notas/{identificador}').json() == {'excluida': True}
+    assert cliente.get('/api/notas').json() == []
+    assert cliente.get(f'/api/notas/{identificador}').status_code == 404
+    assert cliente.get(f'/api/processamentos/{identificador}').status_code == 404
+    assert not (tmp_path / 'resultados' / 'registros' / f'{identificador}.json').exists()
+    assert identificador not in (tmp_path / 'resultados' / 'notas.csv').read_text(encoding='utf-8-sig')
+    assert list((tmp_path / 'revisao').glob('*.xml'))  # original preservado
+    assert cliente.delete(f'/api/notas/{identificador}').status_code == 404
+    reenvio = cliente.post('/api/upload', files={'arquivo': ('nota.xml', XML)}).json()
+    assert not reenvio['duplicado']
+    assert len(cliente.get('/api/notas').json()) == 1

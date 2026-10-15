@@ -28,7 +28,7 @@ $env:OCR_LANG = 'por'
 & $env:TESSERACT_CMD --list-langs
 ```
 
-No Linux, os pacotes usuais são `tesseract-ocr` e `tesseract-ocr-por`. Se o executável estiver no `PATH`, `TESSERACT_CMD` é dispensável. Sem Tesseract, XML e PDFs com texto continuam funcionando; imagens e páginas escaneadas registram erro de OCR.
+No Linux, os pacotes usuais são `tesseract-ocr` e `tesseract-ocr-por`. Se o executável estiver no `PATH`, `TESSERACT_CMD` é dispensável. No Windows, o sistema também procura a instalação em `ProgramFiles/Tesseract-OCR` e `LOCALAPPDATA/Tesseract-OCR`. Sem Tesseract, XML e PDFs com texto continuam funcionando; imagens e páginas escaneadas registram erro de OCR.
 
 ## Executar a aplicação
 
@@ -176,10 +176,13 @@ Os metadados registram chamadas, uso de IA, campos aceitos, erro, estimativa sim
 | POST | `/api/upload` | Multipart com campo `arquivo`; limite de 20 MB |
 | GET | `/api/notas` | Lista; `tipo`, `busca`, `limite` (1–500), `deslocamento` |
 | GET | `/api/notas/{id}` | Registro completo |
+| DELETE | `/api/notas/{id}` | Exclui registro, aliases e exportação JSON; atualiza CSV e preserva arquivos originais |
 | GET | `/api/processamentos/{id}` | Status final, erro e horário |
 | GET | `/docs` | Swagger automático |
 
 Valida extensão, tamanho, arquivo vazio e assinatura de PDF/imagem. A rota rejeita declarações DTD/entidades identificadas no conteúdo; o parser também impede expansão de entidades. MIME fornecido pelo cliente não é usado como prova de formato. Nome de upload não pode escolher caminhos fora da pasta temporária. Um upload aceito que falha na extração retorna HTTP 200 com `status=erro`; erros de validação do upload usam HTTP 400, 413 ou 415. Não há processamento assíncrono em segundo plano.
+
+A interface oferece exclusão com confirmação, filtros de status, busca por emitente/CNPJ/número/arquivo, ordenação e resumo financeiro das notas concluídas. A exclusão permite reenviar o documento para criar novamente o registro.
 
 ## Testes
 
@@ -192,7 +195,7 @@ $env:TESTAR_OCR_REAL = '1'
 npm --prefix frontend run build
 ```
 
-Resultado verificado em 14/10/2026: **62 aprovados + 3 ignorados** na suíte padrão; **65 aprovados** com OCR real habilitado. Inclui XML/PDF NF-e e NFS-e, imagens e PDF escaneado, incompletos, corrupção, documentos não fiscais, CNPJ inválido, ausência/multiplicidade de vencimentos, lote, SQLite/duplicidade, IA com mocks e API. A fixture automática desliga a IA e bloqueia o transporte externo. Nenhuma chave ou serviço pago é necessário.
+Resultado verificado em 14/10/2026: **73 aprovados + 3 ignorados** na suíte padrão; **76 aprovados** com OCR real habilitado. Inclui XML/PDF NF-e e NFS-e, imagens e PDF escaneado, incompletos, corrupção, documentos não fiscais, CNPJ inválido, ausência/multiplicidade de vencimentos, lote, SQLite/duplicidade, IA com mocks e API. A fixture automática desliga a IA e bloqueia o transporte externo. Nenhuma chave ou serviço pago é necessário.
 
 No navegador foram verificados upload de XML fictício, listagem, detalhe, pesquisa, filtro e estados de revisão; layouts de 390 px e desktop também foram inspecionados. [Captura estreita](docs/interface-mobile.jpg). Não foi realizada validação em celular físico.
 
@@ -200,8 +203,8 @@ No navegador foram verificados upload de XML fictício, listagem, detalhe, pesqu
 
 - Layouts municipais de NFS-e variam: o parser XML cobre o namespace ABRASF usado nos exemplos, o retorno municipal paulistano (`RetornoConsulta/NFe`, com ou sem namespace) e o de NF-e o namespace do Portal Fiscal. Padrões nacionais/municipais diferentes podem precisar de novos adaptadores.
 - PDFs com texto são lidos preservando as colunas. Cabeçalhos e linhas de valores são associados por coluna, e a seção de totais tem prioridade sobre itens individuais. RPS não substitui número da NFS-e. O formato municipal denominado `NFe` é classificado como NFS-e por sua estrutura.
-- PDF/imagem depende de rótulos e contexto textual reconhecíveis. Tabelas com ordem de leitura ambígua, fotos inclinadas, baixa nitidez e texto manuscrito podem gerar campos ausentes. OCR não garante recuperação de imagens ruins.
-- O leitor considera texto útil a partir de 20 caracteres por página; cabeçalhos em páginas com corpo escaneado podem impedir OCR automático. Não há análise visual de layout ou retentativas múltiplas de OCR.
+- PDF/imagem depende de rótulos e contexto textual reconhecíveis. Tabelas com ordem de leitura ambígua, fotos inclinadas, baixa nitidez e texto manuscrito podem gerar campos ausentes. OCR não garante recuperação de imagens ruins. Uma foto reconhecida com chave ausente permanece para revisão, preservando os demais campos extraídos.
+- O leitor considera texto útil a partir de 20 caracteres por página; cabeçalhos em páginas com corpo escaneado podem impedir OCR automático. O OCR corrige orientação EXIF, amplia imagens pequenas e relê regiões de total/chave de DANFE localizadas pelos rótulos. Valores conflitantes e chaves não validadas não são aceitos nessa releitura; não há correção automática de dígitos da chave.
 - Uma nota por documento. Não há separação de arquivos com várias notas nem suporte a XML compactado/ZIP, assinatura digital ou consulta à SEFAZ/prefeituras.
 - Somente CPF/CNPJ numéricos. Identificadores alfanuméricos e regimes tributários específicos não são tratados.
 - ISS, base, alíquota e retenção são extraídos quando o layout expõe rótulos suportados. Não há cálculo/reconciliação tributária completa.

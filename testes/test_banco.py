@@ -32,3 +32,14 @@ def test_hash_alternativo_aponta_para_mesma_nota(tmp_path):
     banco.salvar(registro('b'))
     assert banco.obter('b')['id'] == 'a'
     assert len(banco.listar()) == 1
+
+
+def test_exclusao_por_alias_remove_todos_os_hashes(tmp_path):
+    banco = Banco(tmp_path / 'notas.sqlite3')
+    banco.salvar(registro('a'))
+    banco.salvar(registro('b'))
+    assert set(banco.excluir('b')) == {'a', 'b'}
+    assert banco.obter('a') is None
+    assert banco.obter('b') is None
+    assert banco.excluir('a') is None
+    assert not banco.salvar(registro('b'))['duplicado']

@@ -79,3 +79,16 @@ class Banco:
                  json.dumps(registro, ensure_ascii=False, allow_nan=False)))
             conexao.execute('INSERT INTO arquivos VALUES (?, ?)', (registro['id'], registro['id']))
         return registro
+
+    def excluir(self, identificador):
+        """Remove a nota e todos os hashes de duplicatas na mesma transação."""
+        with self.conectar() as conexao:
+            conexao.execute('BEGIN IMMEDIATE')
+            linha = conexao.execute('SELECT nota_id FROM arquivos WHERE hash = ?', (identificador,)).fetchone()
+            if not linha:
+                return None
+            nota_id = linha['nota_id']
+            hashes = [r['hash'] for r in conexao.execute('SELECT hash FROM arquivos WHERE nota_id = ?', (nota_id,))]
+            conexao.execute('DELETE FROM arquivos WHERE nota_id = ?', (nota_id,))
+            conexao.execute('DELETE FROM notas WHERE id = ?', (nota_id,))
+            return hashes

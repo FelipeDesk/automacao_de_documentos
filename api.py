@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, UploadFile
 from processamento.banco import Banco
-from processamento.lote import processar_recebido
+from processamento.lote import processar_recebido, exportar_csv
 from processamento.pipeline import EXTENSOES
 
 MAX_UPLOAD = 20 * 1024 * 1024
@@ -37,6 +37,20 @@ def criar_app(base=None):
     def consultar_status(identificador: str):
         registro = consultar_nota(identificador)
         return {k: registro.get(k) for k in ('id', 'status', 'erro', 'processado_em')}
+
+    @app.delete('/api/notas/{identificador}')
+    def excluir_nota(identificador: str):
+        with trava:
+            hashes = Banco(base / 'notas.sqlite3').excluir(identificador)
+            if hashes is None:
+                raise HTTPException(404, 'Nota não encontrada')
+            pasta = (base / 'resultados' / 'registros').resolve()
+            for digest in hashes:
+                caminho = (pasta / f'{digest}.json').resolve()
+                if caminho.parent == pasta:
+                    caminho.unlink(missing_ok=True)
+            exportar_csv(base)
+        return {'excluida': True}
 
     @app.post('/api/upload')
     def upload(arquivo: UploadFile):

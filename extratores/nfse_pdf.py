@@ -149,6 +149,15 @@ def extrair_data_emissao_nfse(texto):
     return campo_abaixo(texto, r"Data (?:e Hora )?d[ae] Emissão", DATA) or buscar_campo(texto, padroes)
 
 def extrair_valor_total_nfse(texto):
+    # Alguns municípios imprimem o bruto como total da nota, inclusive no OCR.
+    total_nota = buscar_campo(texto, [
+        rf"VALOR (?:BRUTO|TOTAL D[AO] (?:NOTA|NFS-E))(?:[ \t]*\(R\$\))?[ \t]*[:=]?[ \t]*({DINHEIRO})"
+    ])
+    if total_nota:
+        return total_nota
+    total_nota = campo_abaixo(texto, r"VALOR (?:BRUTO|TOTAL D[AO] (?:NOTA|NFS-E))\b", DINHEIRO)
+    if total_nota:
+        return total_nota
     tabela = campo_abaixo(texto, r"(?<!Unit\. )VALOR (?:TOTAL D[OE]S? SERVI[ÇC]OS?|SERVI[ÇC]O)\b", DINHEIRO)
     if tabela:
         return tabela.replace("R$", "").strip()
@@ -191,7 +200,7 @@ def extrair_nfse_pdf(texto):
         "data_vencimento": None,
         "valor_total": extrair_valor_total_nfse(totais),
         "valor_liquido": campo_abaixo(totais, r"VALOR L[ÍI]QUIDO", DINHEIRO) or buscar_campo(totais, [r"VALOR LÍQUIDO(?: DA NFS-E| DA NOTA)?\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
-        "valor_iss": campo_abaixo(totais, r"VALOR (?:DO )?ISS\b", DINHEIRO) or buscar_campo(totais, [r"(?:VALOR DO ISS(?:QN)?|ISS(?:QN)?)\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
+        "valor_iss": campo_abaixo(totais, r"VALOR (?:DO )?ISS\b(?! RETIDO)", DINHEIRO) or buscar_campo(totais, [r"(?:VALOR DO ISS(?:QN)?|ISS(?:QN)?)\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
         "base_calculo_iss": campo_abaixo(totais, r"BASE DE C[ÁA]LCULO", DINHEIRO) or buscar_campo(totais, [r"BASE DE CÁLCULO(?: DO ISS)?\s*:?\s*(?:R\$\s*)?([\d.,]+)"]),
         "aliquota_iss": campo_abaixo(totais, r"(?:AL[ÍI]QUOTA|ALIQ\. ISS)\s*\(%\)", r"\d+,\d+%?") or buscar_campo(totais, [r"AL[ÍI]QUOTA(?: DO ISS)?\s*:?\s*([\d.,]+)\s*%"]),
         "iss_retido": buscar_campo(texto, [r"ISS RETIDO\s*:?\s*(SIM|NÃO|NAO)"])

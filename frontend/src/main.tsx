@@ -40,6 +40,11 @@ const statusNome = {
   erro: "Erro",
   revisao_necessaria: "Revisão necessária",
 };
+const campoNome: Record<string, string> = {
+  chave_acesso: "Chave de acesso", numero_nota: "Número da nota", valor_total: "Valor bruto",
+  data_emissao: "Data de emissão", "emitente.cnpj": "CNPJ do emitente",
+  "destinatario.cnpj_cpf": "CPF/CNPJ do destinatário",
+};
 const tipoNome = { nfe: "NF-e", nfse: "NFS-e" };
 const moeda = (valor: number | null | undefined) =>
   valor == null
@@ -65,6 +70,10 @@ function App() {
   const [tipo, setTipo] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("");
   const [selecionada, setSelecionada] = useState<Nota | null>(null);
+  const [excluir, setExcluir] = useState<Nota | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const confirmacao = useRef<HTMLDialogElement>(null);
+  const [ordem, setOrdem] = useState("recentes");
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [arrastando, setArrastando] = useState(false);
@@ -100,6 +109,27 @@ function App() {
   useEffect(() => {
     if (selecionada) dialog.current?.showModal();
   }, [selecionada]);
+
+  useEffect(() => {
+    if (excluir) confirmacao.current?.showModal();
+  }, [excluir]);
+
+  async function confirmarExclusao() {
+    if (!excluir || excluindo) return;
+    setExcluindo(true);
+    try {
+      await requisitar(`/api/notas/${excluir.id}`, { method: "DELETE" });
+      setNotas((lista) => lista.filter((n) => n.id !== excluir.id));
+      setMensagem("Nota excluída da lista. Você pode enviar o arquivo novamente.");
+      setErro("");
+      confirmacao.current?.close();
+      setExcluir(null);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível excluir a nota.");
+    } finally {
+      setExcluindo(false);
+    }
+  }
 
   async function enviar(arquivos: FileList | File[]) {
     if (enviando || !arquivos.length) return;
@@ -146,10 +176,11 @@ function App() {
   const visiveis = notas.filter(
     (n) =>
       (!tipo || n.dados?.tipo === tipo) &&
-      (!filtroStatus || n.status === filtroStatus) &&
+      (!filtroStatus || n.status === filtroStatus || (filtroStatus === "atencao" && n.status !== "sucesso")) &&
       (!pesquisa ||
         [
           n.dados?.numero_nota,
+          n.dados?.emitente.razao_social,
           n.dados?.emitente.cnpj,
           n.dados?.emitente.cnpj?.replace(/\D/g, ""),
           n.origem,
@@ -159,6 +190,13 @@ function App() {
             v?.toLowerCase().includes(pesquisa),
         )),
   );
+  visiveis.sort((a, b) => ordem === "valor"
+    ? (b.dados?.valor_total ?? -1) - (a.dados?.valor_total ?? -1)
+    : ordem === "emitente"
+      ? (a.dados?.emitente.razao_social || a.origem).localeCompare(b.dados?.emitente.razao_social || b.origem, "pt-BR")
+      : b.processado_em.localeCompare(a.processado_em));
+  const concluidas = notas.filter((n) => n.status === "sucesso");
+  const totalBruto = concluidas.reduce((soma, n) => soma + (n.dados?.valor_total ?? 0), 0);
   const detalhes = selecionada?.dados;
   return (
     <div className="app">
@@ -236,15 +274,10 @@ function App() {
             </strong>
             <small>Revisões e erros</small>
           </div>
-          <div>
-            <span>Com auxílio de IA</span>
-            <strong>
-              {notas
-                .filter((n) => n.dados?.metadados.ia.utilizada)
-                .length.toString()
-                .padStart(2, "0")}
-            </strong>
-            <small>Uso apenas quando autorizado</small>
+          <div className="total-card">
+            <span>Valor bruto concluído</span>
+            <strong>{moeda(totalBruto)}</strong>
+            <small>Soma das {concluidas.length} notas concluídas</small>
           </div>
         </section>
         <section
@@ -270,7 +303,7 @@ function App() {
                 ? "Lendo seus documentos…"
                 : "Arraste suas notas para cá"}
             </h2>
-            <p>XML, PDF, JPG ou PNG · Até 20 MB por arquivo</p>
+            <p>XML, PDF e fotos JPG ou PNG · Até 20 MB por arquivo</p>
           </div>
           <input
             ref={input}
@@ -302,7 +335,7 @@ function App() {
           <div className="list-heading">
             <div>
               <h2>
-                {filtroStatus ? "Documentos para revisar" : "Seus documentos"}
+                {filtroStatus === "revisao_necessaria" ? "Documentos para revisar" : filtroStatus === "erro" ? "Documentos com erro" : "Seus documentos"}
               </h2>
               <span>{visiveis.length} resultado(s)</span>
             </div>
@@ -310,8 +343,8 @@ function App() {
               <label className="search">
                 <span aria-hidden="true">⌕</span>
                 <input
-                  aria-label="Pesquisar por CNPJ ou número"
-                  placeholder="Buscar CNPJ ou número…"
+                  aria-label="Pesquisar emitente, CNPJ, número ou arquivo"
+                  placeholder="Emitente, CNPJ ou número…"
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
                 />
@@ -327,6 +360,21 @@ function App() {
               </select>
             </div>
           </div>
+          <div className="list-tools">
+            <div className="status-tabs" aria-label="Filtrar status">
+              {[["", "Todos"], ["sucesso", "Concluídas"], ["revisao_necessaria", "Para revisar"], ["erro", "Com erro"]].map(([valor, nome]) => (
+                <button key={valor} className={filtroStatus === valor ? "active" : ""}
+                  aria-pressed={filtroStatus === valor} onClick={() => setFiltroStatus(valor)}>
+                  {nome} <span>{notas.filter((n) => !valor || n.status === valor).length}</span>
+                </button>
+              ))}
+            </div>
+            <select aria-label="Ordenar documentos" value={ordem} onChange={(e) => setOrdem(e.target.value)}>
+              <option value="recentes">Mais recentes</option>
+              <option value="valor">Maior valor bruto</option>
+              <option value="emitente">Emitente A–Z</option>
+            </select>
+          </div>
           <div className="table-wrap">
             <table>
               <thead>
@@ -337,7 +385,7 @@ function App() {
                   <th>Valor bruto</th>
                   <th>Status</th>
                   <th>
-                    <span className="sr-only">Detalhes</span>
+                    <span className="sr-only">Ações</span>
                   </th>
                 </tr>
               </thead>
@@ -377,7 +425,7 @@ function App() {
                         <span className="ai">IA</span>
                       )}
                     </td>
-                    <td>
+                    <td className="row-actions">
                       <button
                         className="details"
                         aria-label={`Ver detalhes de ${n.dados?.numero_nota || n.origem}`}
@@ -385,6 +433,9 @@ function App() {
                       >
                         Ver detalhes ↗
                       </button>
+                      <button className="delete-button" disabled={enviando || excluindo}
+                        aria-label={`Excluir nota ${n.dados?.numero_nota || n.origem}`}
+                        onClick={() => { setErro(""); setExcluir(n); }}>Excluir</button>
                     </td>
                   </tr>
                 ))}
@@ -409,7 +460,7 @@ function App() {
             </div>
           )}
           <footer>
-            Dados ausentes ou inconsistentes ficam disponíveis para revisão.
+            {visiveis.length} de {notas.length} documentos · Valor bruto visível: {moeda(visiveis.reduce((soma, n) => soma + (n.dados?.valor_total ?? 0), 0))}
             <span>Extração local primeiro</span>
           </footer>
         </section>
@@ -418,6 +469,19 @@ function App() {
           antes de utilizá-los.
         </p>
       </main>
+      <dialog ref={confirmacao} className="delete-dialog" aria-labelledby="delete-title"
+        onCancel={(e) => { if (excluindo) e.preventDefault(); }}
+        onClose={() => setExcluir(null)}>
+        <span className="eyebrow">GERENCIAR DOCUMENTO</span>
+        <h2 id="delete-title">Excluir esta nota?</h2>
+        <p><b>{excluir?.dados?.numero_nota ? `Nota ${excluir.dados.numero_nota}` : excluir?.origem}</b></p>
+        <p>A nota será removida da lista e das exportações. Os arquivos originais serão preservados. Para recuperar o registro, envie o arquivo novamente.</p>
+        {erro && <p className="error" role="alert">{erro}</p>}
+        <div className="dialog-actions">
+          <button className="secondary" disabled={excluindo} onClick={() => confirmacao.current?.close()}>Cancelar</button>
+          <button className="danger" disabled={excluindo} onClick={() => void confirmarExclusao()}>{excluindo ? "Excluindo…" : "Excluir nota"}</button>
+        </div>
+      </dialog>
       <dialog
         ref={dialog}
         onClose={() => setSelecionada(null)}
@@ -502,7 +566,7 @@ function App() {
               {!!detalhes.avaliacao.campos_ausentes.length && (
                 <p>
                   <b>Campos ausentes:</b>{" "}
-                  {detalhes.avaliacao.campos_ausentes.join(", ")}
+                  {detalhes.avaliacao.campos_ausentes.map((campo) => campoNome[campo] || campo).join(", ")}
                 </p>
               )}
               {!!detalhes.avaliacao.inconsistencias.length && (
