@@ -790,3 +790,63 @@ dd {
   .document-name strong, .document-name small { max-width: 160px; }
   .delete-button { margin-left: 8px; }
 }
+
+/* Tema escuro: superfícies, estados e controles compartilham a mesma paleta. */
+:root {
+  color-scheme: dark;
+  --surface: #171c23;
+  --surface-raised: #1d242d;
+  --surface-muted: #111820;
+  --border: #34404b;
+  --text: #e9eff4;
+  --muted: #aebbc7;
+  --green: #72d9b1;
+  color: var(--text);
+  background: #0e1116;
+}
+*, *::before, *::after { border-radius: 0 !important; }
+body, .app { background: #0e1116; }
+:focus-visible { outline-color: var(--green); }
+.sidebar, .documents, .stats > div, dialog { background: var(--surface); border-color: var(--border); }
+.sidebar { border-right-color: var(--border); }
+.brand-icon, .primary { background: #176b56; border-color: #398e73; color: #fff; }
+.brand-dot, .green, .local-note, .feedback { color: var(--green); }
+.nav-label, .local-note p, .breadcrumb, .heading p, .stats span, .stats small,
+.list-heading > div > span, .document-name small, .origin, dt, .page-note,
+.documents footer, td, .empty p { color: var(--muted); }
+.nav-item { color: #bdcbd5; }
+.nav-item.selected, .status-tabs button.active { background: #153d34; color: #a4efd0; border-color: #36735f; }
+.nav-count { background: var(--surface-raised); color: var(--text); }
+.green-dot, .status i { background: currentColor; }
+header, th, td, dl { border-color: var(--border); }
+.breadcrumb span { color: #738391; }
+.local-chip, .secondary, .search, .filters select, .list-tools select,
+.delete-button { background: var(--surface-raised); border-color: var(--border); color: var(--text); }
+.eyebrow, .details, .empty > span { color: var(--green); }
+.stats .total-card { background: #17362e; border-color: #36735f; }
+.stats .total-card strong { color: #a4efd0; }
+.amber { color: #f0c477; }
+.upload, .quality { background: var(--surface-muted); border-color: #426b5b; }
+.upload.dragging { background: #193b31; border-color: var(--green); }
+.upload-icon, .file-icon { background: var(--surface-raised); border-color: var(--border); color: var(--green); }
+.upload p, .empty h3, .document-name strong, .money, dd, .quality h3 { color: var(--text); }
+.error, .erro { background: #3a1f25; border-color: #79505a; color: #ffb2b8; }
+.search input { color: var(--text); }
+.search input::placeholder { color: #94a6b5; opacity: 1; }
+.search:focus-within { outline-color: var(--green); }
+th { background: var(--surface-muted); color: #c5d2dc; }
+.type { border-color: var(--border); color: #cbd8e2; }
+.sucesso { background: #173b30; color: #a4efd0; }
+.revisao_necessaria { background: #42331c; color: #f3ce88; }
+.ai { background: #302445; color: #dac2fa; }
+.status-tabs button { background: var(--surface-raised); color: var(--muted); }
+.status-tabs button.active { background: #153d34; color: #a4efd0; }
+.delete-button { color: #ffb2b8; border-color: #79505a; }
+.danger { background: #8f343e; border-color: #b5555e; }
+dialog { color: var(--text); box-shadow: 0 24px 80px #000a; }
+dialog::backdrop { background: #04070bca; }
+.quality p, .raw pre { color: #c5d2dc; }
+@media (hover: hover) and (pointer: fine) {
+  tbody tr:hover { background: #202a33; }
+  button:not(:disabled):hover { filter: brightness(1.13); }
+}

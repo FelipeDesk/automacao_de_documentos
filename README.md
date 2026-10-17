@@ -2,7 +2,7 @@
 
 Extração local de **NF-e e NFS-e** em XML, PDF, PNG e JPEG, com organização em JSON, CSV e SQLite. API FastAPI e interface React + TypeScript + Vite. IA opcional apenas para extrações incompletas e mediante autorização explícita.
 
-![Interface com documento fictício](docs/interface.jpg)
+O painel usa tema escuro com cantos retos. As capturas em `docs/` mostram versões anteriores da interface e servem apenas como histórico do projeto.
 
 ## Instalação
 
@@ -136,6 +136,82 @@ flowchart TD
 - `api.py`: uploads e consultas; reutiliza o mesmo processamento do lote.
 - `frontend/`: interface responsiva, sem biblioteca visual adicional.
 
+### Mapa dos arquivos
+
+Esta é a ordem sugerida de leitura para estudar o projeto: `api.py` ou `main.py` → `processamento/pipeline.py` → leitores/extratores → normalização/avaliação → persistência. O frontend consulta a mesma API usada pelo upload.
+
+| Arquivo | Responsabilidade |
+| --- | --- |
+| `api.py` | Cria o FastAPI; valida uploads, lista, consulta e exclui registros. |
+| `main.py` | Entrada do processamento em lote e funções de compatibilidade para um arquivo. |
+| `gerar_demo.py` | Gera exemplos fictícios para estudo, sem dados reais. |
+| `processamento/pipeline.py` | Coordena leitura, extração, normalização, avaliação e eventual tentativa com IA. Define formatos e versão do extrator. |
+| `processamento/leitor.py` | Extrai texto de PDF e imagem; recorre ao OCR em páginas sem texto útil. |
+| `processamento/leitor_xml.py` | Reconhece a estrutura do XML e escolhe o extrator correspondente. |
+| `processamento/ocr.py` | Prepara imagens, encontra o Tesseract e relê regiões de DANFE. |
+| `processamento/classificador_fiscal.py` | Identifica NF-e ou NFS-e no texto de PDF/foto. |
+| `processamento/normalizador.py` | Converte datas, CPF/CNPJ e valores para um formato comum. |
+| `processamento/validador.py` | Verifica dígitos de CPF, CNPJ e chave de acesso. |
+| `processamento/avaliador.py` | Aponta campos obrigatórios ausentes e inconsistências; determina necessidade de revisão. |
+| `processamento/ia.py` | Executa o fallback opcional, limitado a campos ausentes e evidências literais. |
+| `processamento/lote.py` | Identifica duplicatas, processa arquivos, organiza pastas e exporta JSON/CSV. |
+| `processamento/banco.py` | Cria e consulta o SQLite; persiste, atualiza e exclui notas e hashes associados. |
+| `extratores/campos_layout.py` | Lê campos de tabelas em colunas sem atribuir números a rótulos errados. |
+| `extratores/nfe_pdf.py` | Extrai campos de DANFE em texto de PDF ou OCR. |
+| `extratores/nfse_pdf.py` | Extrai campos de NFS-e em texto de PDF ou OCR. |
+| `extratores/nfe_xml.py` | Extrai NF-e do XML do Portal Fiscal. |
+| `extratores/nfse_xml.py` | Extrai NFS-e de XML ABRASF ou municipal paulistano. |
+| `frontend/src/main.tsx` | Tela React: upload, lista, filtros, detalhes e exclusão. |
+| `frontend/src/style.css` | Layout responsivo, cores do tema escuro e estados visuais. |
+| `frontend/index.html` | Documento HTML inicial, metadados e ponto de montagem do React. |
+| `frontend/vite.config.ts` | Configura o proxy `/api` do Vite para o FastAPI local. |
+| `frontend/tsconfig.json` | Regras de compilação e checagem do TypeScript. |
+| `frontend/src/vite-env.d.ts` | Tipos do ambiente Vite usados pelo frontend. |
+| `frontend/package.json` | Scripts de desenvolvimento/build e dependências declaradas. |
+| `frontend/package-lock.json` | Versões exatas resolvidas pelo npm para instalação reproduzível. |
+| `requirements.txt` | Bibliotecas Python necessárias para executar a aplicação. |
+| `requirements-dev.txt` | Dependências adicionais da suíte de testes. |
+| `.env.example` | Exemplo de variáveis de ambiente; não é carregado automaticamente. |
+| `.gitignore` | Impede que banco, credenciais, caches e documentos operacionais entrem no Git. |
+| `pytest.ini` | Registra a marca dos testes opcionais com OCR real. |
+| `testes/__init__.py` | Torna os utilitários de teste importáveis como pacote. |
+| `testes/conftest.py` | Fixtures comuns; bloqueia chamadas externas de IA durante a suíte. |
+| `testes/dados_ficticios.py` | Cria os documentos sintéticos usados no gerador e nos testes. |
+| `testes/test_api.py` | Exercita validação do upload, consultas e exclusão HTTP. |
+| `testes/test_banco.py` | Exercita persistência SQLite e identificação de duplicatas. |
+| `testes/test_ia.py` | Verifica autorizações, resposta estruturada e evidências sem chamada externa real. |
+| `testes/test_avaliador.py` | Verifica completude, validade e necessidade de revisão. |
+| `testes/test_validadores.py` | Verifica CPF, CNPJ, chave de acesso e regras de dígito. |
+| `testes/test_ocr.py` | Verifica leitura de imagens, PDFs escaneados e descoberta do Tesseract. |
+| `testes/test_classificador.py` | Verifica o reconhecimento de NF-e/NFS-e no texto. |
+| `testes/test_extracao_pdf.py` | Exercita os extratores de PDF com exemplos sintéticos. |
+| `testes/test_extracao_xml.py` | Exercita os extratores de XML e formatos desconhecidos. |
+| `testes/test_nfse_layouts.py` | Verifica variações de apresentação da NFS-e. |
+| `testes/test_layouts_municipais.py` | Verifica colunas e XML municipal, inclusive regressões. |
+| `testes/test_lote.py` | Exercita processamento em lote e organização de pastas. |
+| `testes/test_integracao.py` | Verifica o fluxo de ponta a ponta entre componentes. |
+| `testes/test_regressao.py` | Protege casos de erro já corrigidos. |
+| `testes/fixtures/nfe_teste.xml` | NF-e XML fictícia para verificar o extrator. |
+| `testes/fixtures/nfse_teste.xml` | NFS-e XML fictícia para verificar o extrator. |
+| `testes/fixtures/xml_desconhecido.xml` | XML sem estrutura fiscal reconhecida. |
+| `testes/fixtures/danfe_teste.pdf` | DANFE fictício de referência. |
+| `testes/fixtures/danfe_teste2.pdf` | Segundo layout de DANFE fictício. |
+| `testes/fixtures/danfse_teste.pdf` | Layout de NFS-e fictícia. |
+| `exemplos/nfe_teste.xml` | NF-e XML fictícia para execução manual. |
+| `exemplos/nfse_teste.xml` | NFS-e XML fictícia para execução manual. |
+| `exemplos/xml_desconhecido.xml` | Exemplo de XML não fiscal. |
+| `exemplos/danfe_teste.pdf` | Exemplo de DANFE em PDF. |
+| `exemplos/danfe_teste2.pdf` | Exemplo de outro layout de DANFE. |
+| `exemplos/danfse_teste.pdf` | Exemplo de NFS-e em PDF. |
+| `exemplos/nfse_escaneada.pdf` | Exemplo de PDF escaneado que requer OCR. |
+| `exemplos/nfse_imagem.jpg` | Foto fictícia de NFS-e para testar OCR JPEG. |
+| `exemplos/nfse_imagem.png` | Imagem fictícia de NFS-e para testar OCR PNG. |
+| `docs/RELATORIO.md` | Relatório das fases, decisões e validações do projeto. |
+| `docs/interface.jpg` | Captura histórica da interface em desktop. |
+| `docs/interface-mobile.jpg` | Captura histórica da interface estreita. |
+
+`entrada/`, `processados/`, `revisao/`, `erros/`, `duplicados/`, `uploads/`, `resultados/`, `notas.sqlite3`, `.venv/`, `frontend/node_modules/` e `frontend/dist/` são dados ou artefatos gerados localmente; não são código-fonte do projeto.
+
 O formato original (`tipo`, `numero_nota`, `emitente`, `destinatario`, datas e `valor_total`) foi preservado. Foram acrescentados campos de líquido/ISS, `vencimentos`, validações, avaliação e metadados. `valor_total` representa **valor bruto**. `data_vencimento` mantém o primeiro vencimento encontrado; `vencimentos` preserva todas as datas identificadas. Ausência é `null`, nunca um valor inventado. Os registros do lote/API envolvem esses dados na propriedade `dados` e acrescentam status e origem.
 
 ### Regras de qualidade
@@ -159,11 +235,20 @@ $env:IA_HABILITADA = '1'
 $env:IA_ENVIO_AUTORIZADO = '1'
 ```
 
+**Quando a IA é acionada:** a decisão ocorre em `processamento/pipeline.py` depois da primeira extração local e da avaliação por regras. A chamada acontece apenas quando **todas** estas condições são verdadeiras:
+
+1. O documento foi reconhecido como NF-e ou NFS-e e há texto de PDF ou OCR disponível. XML é extraído localmente e não fornece texto ao fallback.
+2. Falta pelo menos um campo **obrigatório** avaliado por `processamento/avaliador.py`: número, CNPJ do emitente, valor bruto, data de emissão ou documento do destinatário; NF-e exige também a chave. Campos opcionais ausentes, como valor líquido/ISS, não bastam.
+3. `IA_HABILITADA=1` **e** `IA_ENVIO_AUTORIZADO=1`, além de `OPENAI_API_KEY` e `IA_MODELO` definidos no ambiente do backend ou do lote.
+4. O texto contém linhas com contexto fiscal suficientes para montar o trecho enviado.
+
+Um arquivo repetido com resultado da versão atual retorna do cache antes dessa etapa. Um identificador apenas inválido, sem campo obrigatório ausente, solicita revisão sem chamar IA. Se qualquer condição falhar, `metadados.ia.utilizada` fica `false` e não há requisição externa.
+
 Só habilite as duas opções depois de autorizar o envio dos dados envolvidos e verificar o tratamento adequado das informações. A autorização por ambiente se aplica aos documentos processados nessa execução. Nenhum documento foi enviado a serviços de IA durante o desenvolvimento/testes.
 
 A integração usa [Structured Outputs na Responses API](https://developers.openai.com/api/docs/guides/structured-outputs). Selecione um modelo da sua conta compatível com esse recurso; não há modelo/preço implícito.
 
-Para economizar, XML/texto/OCR e regex têm prioridade. O fallback recebe somente campos ausentes e trechos fiscais (até 12 mil caracteres), faz no máximo uma chamada por processamento e limita a saída a 1.800 tokens. Não envia o arquivo original nem imagens. Documentos completos, não fiscais ou sem texto não acionam a IA. Extrações XML não têm fallback externo nesta versão.
+Para economizar, XML/texto/OCR e regex têm prioridade. O fallback recebe somente campos ausentes e trechos fiscais (até 12 mil caracteres), faz no máximo uma chamada por processamento e limita a saída a 1.800 tokens. Esse trecho pode conter nomes, identificadores e valores presentes no documento; não envia o arquivo original nem imagens. Documentos completos, não fiscais ou sem texto não acionam a IA. Extrações XML não têm fallback externo nesta versão.
 
 A resposta deve citar evidência literal, conter o valor nessa evidência e preencher apenas campos ausentes permitidos. Valores existentes são preservados. Mesmo assim, ocorrência textual não prova associação semântica ao campo: toda nota com campos aceitos da IA exige conferência humana. JSON inválido, recusa/resposta incompleta, timeout ou falha de rede preservam a extração local.
 
