@@ -76,6 +76,8 @@ def processar_recebido(arquivo, base):
     except Exception as erro:
         registro['erro'] = f'Falha de leitura ou extração ({type(erro).__name__}). Verifique formato, integridade, layout e configuração de OCR.'
     registro = banco.salvar(registro, atualizar=reavaliar)
+    if reavaliar and registro['id'] != digest:
+        destino.unlink(missing_ok=True)
     destino = base / 'resultados' / 'registros' / f"{registro['id']}.json"
     gravar_json(destino, registro)
     exportar_csv(base)

@@ -58,7 +58,21 @@ class Banco:
         cnpj = re.sub(r'\D', '', (dados.get('emitente') or {}).get('cnpj') or '')
         with self.conectar() as conexao:
             conexao.execute('BEGIN IMMEDIATE')
-            existente = conexao.execute('SELECT registro FROM notas WHERE id = ? OR chave_fiscal = ?', (registro['id'], fiscal)).fetchone()
+            por_id = conexao.execute('SELECT registro FROM notas WHERE id = ?', (registro['id'],)).fetchone()
+            por_chave = (conexao.execute('SELECT registro FROM notas WHERE chave_fiscal = ?', (fiscal,)).fetchone()
+                         if fiscal else None)
+            # Uma foto antes ilegível pode, ao ser reprocessada, revelar a
+            # chave de uma nota já cadastrada por XML/PDF. Consolida o erro
+            # antigo e seus hashes na nota existente em vez de deixar uma
+            # linha de erro órfã ou violar a chave única.
+            if atualizar and por_id and por_chave:
+                original_chave = json.loads(por_chave['registro'])
+                if original_chave['id'] != registro['id']:
+                    conexao.execute('UPDATE arquivos SET nota_id = ? WHERE nota_id = ?',
+                                    (original_chave['id'], registro['id']))
+                    conexao.execute('DELETE FROM notas WHERE id = ?', (registro['id'],))
+                    return {**original_chave, 'duplicado': True}
+            existente = por_id or por_chave
             if existente:
                 original = json.loads(existente['registro'])
                 if atualizar and original['id'] == registro['id']:

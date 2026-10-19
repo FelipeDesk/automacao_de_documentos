@@ -846,6 +846,24 @@ th { background: var(--surface-muted); color: #c5d2dc; }
 dialog { color: var(--text); box-shadow: 0 24px 80px #000a; }
 dialog::backdrop { background: #04070bca; }
 .quality p, .raw pre { color: #c5d2dc; }
+.document-dialog { width: min(1280px, 96vw); max-height: 92dvh; }
+.detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 0.95fr); gap: 28px; align-items: start; }
+.detail-content { min-width: 0; }
+.document-preview { min-width: 0; border: 1px solid var(--border); background: var(--surface-muted); }
+.preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.preview-heading > div { min-width: 0; display: grid; gap: 5px; }
+.preview-heading strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-heading a { flex: none; color: var(--green); font-size: 12px; }
+.preview-stage { min-height: 360px; height: min(70dvh, 780px); display: grid; place-items: center; overflow: auto; }
+.preview-stage > img { width: 100%; height: 100%; object-fit: contain; }
+.preview-stage > iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+.preview-stage > pre { align-self: stretch; justify-self: stretch; margin: 0; padding: 18px; color: var(--text); font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.preview-stage > p { padding: 24px; color: var(--muted); text-align: center; }
+@media (max-width: 900px) {
+  .detail-layout { grid-template-columns: 1fr; }
+  .document-preview { grid-row: 1; }
+  .preview-stage { height: min(58dvh, 560px); }
+}
 @media (hover: hover) and (pointer: fine) {
   tbody tr:hover { background: #202a33; }
   button:not(:disabled):hover { filter: brightness(1.13); }

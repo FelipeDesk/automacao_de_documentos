@@ -45,7 +45,7 @@ Terminal 2:
 npm --prefix frontend run dev
 ```
 
-Abra [a interface](http://127.0.0.1:5173) e [o Swagger](http://127.0.0.1:8000/docs). O Vite encaminha `/api` ao backend local. Faça upload de um ou mais arquivos ou use drag & drop. Pesquise por CNPJ/número, filtre NF-e/NFS-e e abra **Ver detalhes** para consultar valores, qualidade, ausência de campos e erros.
+Abra [a interface](http://127.0.0.1:5173) e [o Swagger](http://127.0.0.1:8000/docs). O Vite encaminha `/api` ao backend local. Faça upload de um ou mais arquivos ou use drag & drop. Pesquise por CNPJ/número, filtre NF-e/NFS-e e abra **Ver detalhes** para comparar os dados extraídos com o arquivo original: foto, PDF ou XML.
 
 A API é síncrona: o upload retorna o status final. A interface indica processamento enquanto aguarda a resposta. Use uma instância do backend, com um worker; esta versão é uma ferramenta local, sem autenticação ou fila distribuída. Não execute lote e API simultaneamente sobre a mesma pasta de dados: SQLite protege as inserções, mas as exportações em arquivo não têm coordenação entre processos.
 
@@ -142,7 +142,7 @@ Esta é a ordem sugerida de leitura para estudar o projeto: `api.py` ou `main.py
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| `api.py` | Cria o FastAPI; valida uploads, lista, consulta e exclui registros. |
+| `api.py` | Cria o FastAPI; valida uploads, lista, consulta, serve a prévia do original e exclui registros. |
 | `main.py` | Entrada do processamento em lote e funções de compatibilidade para um arquivo. |
 | `gerar_demo.py` | Gera exemplos fictícios para estudo, sem dados reais. |
 | `processamento/pipeline.py` | Coordena leitura, extração, normalização, avaliação e eventual tentativa com IA. Define formatos e versão do extrator. |
@@ -226,33 +226,42 @@ Campos obrigatórios comuns: número, CNPJ do emitente e valor bruto. Para NF-e/
 
 ## IA opcional e economia de tokens
 
-O processamento local funciona sem chave. `.env.example` é uma referência de configuração; **não há carregamento automático de `.env`**. Defina variáveis no processo que inicia o programa:
+O processamento local funciona sem chave. `.env.example` é uma referência de configuração; **não há carregamento automático de `.env`**. Para usar a faixa gratuita do Gemini, crie uma chave no [Google AI Studio](https://aistudio.google.com/app/apikey) e defina estas variáveis **no mesmo terminal em que iniciará o backend**:
 
 ```powershell
-# Configure OPENAI_API_KEY de forma privada no seu ambiente.
-$env:IA_MODELO = 'identificador-do-modelo-da-sua-conta'
+$env:IA_PROVEDOR = 'gemini'
+$chaveGemini = Read-Host 'Chave Gemini' -AsSecureString
+$env:GEMINI_API_KEY = [System.Net.NetworkCredential]::new('', $chaveGemini).Password
+$env:IA_MODELO = 'gemini-2.5-flash'
 $env:IA_HABILITADA = '1'
 $env:IA_ENVIO_AUTORIZADO = '1'
+# Opcional: autoriza enviar também a foto inteira quando faltarem campos.
+$env:IA_ENVIO_IMAGEM = '1'
+.\.venv\Scripts\python.exe -m uvicorn api:app --host 127.0.0.1 --port 8000
 ```
+
+O modelo padrão de Gemini é `gemini-2.5-flash` quando `IA_MODELO` estiver vazio. Defina-o explicitamente ao migrar para evitar que um modelo OpenAI ainda presente no ambiente seja usado. Reinicie o backend após alterar as variáveis **ou atualizar o código**. A chave fica apenas no processo Python; nunca a coloque no frontend, em código versionado nem a envie no chat. O frontend continua usando a mesma API local. O nível gratuito está sujeito às [cotas e condições atuais do Gemini](https://ai.google.dev/gemini-api/docs/pricing); confira-as antes de processar notas reais. Segundo a tabela oficial de preços, o conteúdo do nível gratuito pode ser usado para melhorar os produtos do Google.
+
+Para continuar usando OpenAI, defina `IA_PROVEDOR=openai`, `OPENAI_API_KEY` e um `IA_MODELO` compatível com [Structured Outputs na Responses API](https://developers.openai.com/api/docs/guides/structured-outputs). Sem `IA_PROVEDOR`, OpenAI continua sendo o padrão para instalações existentes.
 
 **Quando a IA é acionada:** a decisão ocorre em `processamento/pipeline.py` depois da primeira extração local e da avaliação por regras. A chamada acontece apenas quando **todas** estas condições são verdadeiras:
 
 1. O documento foi reconhecido como NF-e ou NFS-e e há texto de PDF ou OCR disponível. XML é extraído localmente e não fornece texto ao fallback.
 2. Falta pelo menos um campo **obrigatório** avaliado por `processamento/avaliador.py`: número, CNPJ do emitente, valor bruto, data de emissão ou documento do destinatário; NF-e exige também a chave. Campos opcionais ausentes, como valor líquido/ISS, não bastam.
-3. `IA_HABILITADA=1` **e** `IA_ENVIO_AUTORIZADO=1`, além de `OPENAI_API_KEY` e `IA_MODELO` definidos no ambiente do backend ou do lote.
+3. `IA_HABILITADA=1` **e** `IA_ENVIO_AUTORIZADO=1`, além da chave do provedor selecionado (`GEMINI_API_KEY` ou `OPENAI_API_KEY`) e de um modelo válido. Gemini usa `gemini-2.5-flash` se `IA_MODELO` não estiver definido.
 4. O texto contém linhas com contexto fiscal suficientes para montar o trecho enviado.
 
 Um arquivo repetido com resultado da versão atual retorna do cache antes dessa etapa. Um identificador apenas inválido, sem campo obrigatório ausente, solicita revisão sem chamar IA. Se qualquer condição falhar, `metadados.ia.utilizada` fica `false` e não há requisição externa.
 
-Só habilite as duas opções depois de autorizar o envio dos dados envolvidos e verificar o tratamento adequado das informações. A autorização por ambiente se aplica aos documentos processados nessa execução. Nenhum documento foi enviado a serviços de IA durante o desenvolvimento/testes.
+Só habilite as opções depois de autorizar o envio dos dados envolvidos e verificar o tratamento adequado das informações. A autorização por ambiente se aplica aos documentos processados nessa execução. `IA_ENVIO_IMAGEM=1` é uma autorização separada para enviar fotos JPEG/PNG inteiras, além do texto OCR, apenas quando a extração local estiver incompleta. Os testes automatizados usam respostas simuladas, sem envio externo.
 
-A integração usa [Structured Outputs na Responses API](https://developers.openai.com/api/docs/guides/structured-outputs). Selecione um modelo da sua conta compatível com esse recurso; não há modelo/preço implícito.
+A integração Gemini usa [`generateContent` com saída JSON estruturada](https://ai.google.dev/gemini-api/docs/migrate-to-interactions) por `generationConfig.responseMimeType` e `responseJsonSchema`; a integração OpenAI usa a Responses API. Ambas passam pelo mesmo filtro local de evidências e validações. Após trocar o provedor ou atualizar a integração, reenvie uma nota em revisão para testá-la: registros concluídos e duplicatas da versão atual podem sair do cache sem chamar a IA. Consulte `metadados.ia.provedor`, `chamadas`, `erro` e `campos_aceitos` nos detalhes.
 
-Para economizar, XML/texto/OCR e regex têm prioridade. O fallback recebe somente campos ausentes e trechos fiscais (até 12 mil caracteres), faz no máximo uma chamada por processamento e limita a saída a 1.800 tokens. Esse trecho pode conter nomes, identificadores e valores presentes no documento; não envia o arquivo original nem imagens. Documentos completos, não fiscais ou sem texto não acionam a IA. Extrações XML não têm fallback externo nesta versão.
+Para economizar, XML/texto/OCR e regex têm prioridade. O fallback recebe somente campos ausentes e trechos fiscais (até 12 mil caracteres), faz no máximo uma chamada por processamento e limita a saída a 1.800 tokens. Esse trecho pode conter nomes, identificadores e valores presentes no documento. Sem `IA_ENVIO_IMAGEM=1`, não envia imagens. Com ela, envia uma cópia JPEG reduzida da foto inteira (até 2048 px), que pode consumir tokens adicionais não cobertos pela estimativa simples de caracteres. Documentos completos, não fiscais ou sem texto não acionam a IA. Extrações XML não têm fallback externo nesta versão.
 
-A resposta deve citar evidência literal, conter o valor nessa evidência e preencher apenas campos ausentes permitidos. Valores existentes são preservados. Mesmo assim, ocorrência textual não prova associação semântica ao campo: toda nota com campos aceitos da IA exige conferência humana. JSON inválido, recusa/resposta incompleta, timeout ou falha de rede preservam a extração local.
+A resposta deve citar evidência literal, conter o valor nessa evidência e preencher apenas campos ausentes permitidos. No modo texto, a evidência precisa constar do OCR. No modo foto, identificadores, datas e valores também passam por verificações locais; mesmo assim, a evidência visual gerada pela IA não pode ser conferida automaticamente contra os pixels. Valores existentes são preservados e toda nota com campos aceitos da IA exige conferência humana. JSON inválido, recusa/resposta incompleta, timeout ou falha de rede preservam a extração local. Erros HTTP mostram o status e o código de máquina devolvido pela API (por exemplo, `HTTP 429 (credit_balance_exhausted)`), sem expor a chave, a mensagem livre nem o documento. Este código indica falta de créditos na organização, não um defeito do OCR.
 
-Os metadados registram chamadas, uso de IA, campos aceitos, erro, estimativa simples de tokens de entrada e tokens retornados pela API. Custo estimado é calculado somente se forem definidos `IA_PRECO_ENTRADA_MILHAO` e `IA_PRECO_SAIDA_MILHAO` em USD; não substitui o faturamento do provedor. `store=false` é enviado, mas não constitui garantia geral de retenção zero pelo serviço.
+Os metadados registram provedor, chamadas, uso de IA, campos aceitos, erro, estimativa simples de tokens de entrada e tokens retornados pela API. Custo estimado é calculado somente se forem definidos `IA_PRECO_ENTRADA_MILHAO` e `IA_PRECO_SAIDA_MILHAO` em USD; ajuste esses valores ao trocar de provedor. `store=false` é enviado apenas à OpenAI e não constitui garantia geral de retenção zero pelo serviço.
 
 ## API
 
@@ -261,13 +270,14 @@ Os metadados registram chamadas, uso de IA, campos aceitos, erro, estimativa sim
 | POST | `/api/upload` | Multipart com campo `arquivo`; limite de 20 MB |
 | GET | `/api/notas` | Lista; `tipo`, `busca`, `limite` (1–500), `deslocamento` |
 | GET | `/api/notas/{id}` | Registro completo |
+| GET | `/api/notas/{id}/arquivo` | Arquivo original da nota cadastrada, para prévia de JPG/PNG, PDF e XML |
 | DELETE | `/api/notas/{id}` | Exclui registro, aliases e exportação JSON; atualiza CSV e preserva arquivos originais |
 | GET | `/api/processamentos/{id}` | Status final, erro e horário |
 | GET | `/docs` | Swagger automático |
 
 Valida extensão, tamanho, arquivo vazio e assinatura de PDF/imagem. A rota rejeita declarações DTD/entidades identificadas no conteúdo; o parser também impede expansão de entidades. MIME fornecido pelo cliente não é usado como prova de formato. Nome de upload não pode escolher caminhos fora da pasta temporária. Um upload aceito que falha na extração retorna HTTP 200 com `status=erro`; erros de validação do upload usam HTTP 400, 413 ou 415. Não há processamento assíncrono em segundo plano.
 
-A interface oferece exclusão com confirmação, filtros de status, busca por emitente/CNPJ/número/arquivo, ordenação e resumo financeiro das notas concluídas. A exclusão permite reenviar o documento para criar novamente o registro.
+A interface oferece exclusão com confirmação, filtros de status, busca por emitente/CNPJ/número/arquivo, ordenação e resumo financeiro das notas concluídas. Nos detalhes, o original aparece ao lado dos dados em telas largas e acima deles em telas estreitas. A exclusão permite reenviar o documento para criar novamente o registro; depois dela a rota da prévia não serve mais o arquivo preservado.
 
 ## Testes
 
@@ -280,7 +290,22 @@ $env:TESTAR_OCR_REAL = '1'
 npm --prefix frontend run build
 ```
 
-Resultado verificado em 14/10/2026: **73 aprovados + 3 ignorados** na suíte padrão; **76 aprovados** com OCR real habilitado. Inclui XML/PDF NF-e e NFS-e, imagens e PDF escaneado, incompletos, corrupção, documentos não fiscais, CNPJ inválido, ausência/multiplicidade de vencimentos, lote, SQLite/duplicidade, IA com mocks e API. A fixture automática desliga a IA e bloqueia o transporte externo. Nenhuma chave ou serviço pago é necessário.
+Os testes automatizados cobrem o disparo do Gemini a partir do pipeline, o formato da requisição, tratamento de erro e as rotas de prévia, sem enviar notas a um serviço externo. O registro local mais recente de uma chamada Gemini retornou `HTTP 400 (INVALID_ARGUMENT)` antes da correção do formato JSON. A integração foi ajustada; a confirmação de uma resposta real bem-sucedida exige reiniciar o backend com a chave no ambiente e reenviar uma nota incompleta. Os PDFs, XML e `malaguNFE2.jpg` fornecidos anteriormente passaram na extração local; a foto antiga `malaguNFE.jpg` ainda requer revisão da chave de acesso, pois o OCR não a reproduz com segurança.
+
+Para testar a leitura com cobertura útil, separe arquivos de **uma nota por documento**, com os valores corretos conhecidos para comparação:
+
+| Documento | O que verifica |
+| --- | --- |
+| NF-e XML original e DANFE PDF da mesma nota | Campos, chave de 44 dígitos e consistência entre formatos |
+| NFS-e XML original e PDF com texto selecionável da mesma nota | Número, prestador/tomador, bruto, líquido, ISS e data |
+| DANFE e NFS-e digitalizados em PDF, sem texto selecionável | OCR em página escaneada |
+| Fotos JPG e PNG de NF-e e NFS-e, inteiras, legíveis, de frente | OCR e envio opcional de imagem ao Gemini |
+| Fotos inclinadas, com sombra/dobra e com rotação EXIF | Robustez do pré-processamento e limites de leitura |
+| NFS-e de municípios ou provedores diferentes | Adaptação a layouts distintos |
+| Nota com campo essencial ausente ou ilegível | Disparo da IA, evidência, revisão e preservação dos demais campos |
+| Arquivo duplicado e PDF/imagem inválido | Cache, tratamento de erro e ausência de dados inventados |
+
+Confira especialmente número, CNPJ/CPF, data de emissão, chave NF-e, valor bruto, líquido, ISS, vencimentos e o documento mostrado na prévia. Documentos de teste com dados anonimizados precisam manter os dígitos verificadores válidos quando a validação desses campos fizer parte do teste.
 
 No navegador foram verificados upload de XML fictício, listagem, detalhe, pesquisa, filtro e estados de revisão; layouts de 390 px e desktop também foram inspecionados. [Captura estreita](docs/interface-mobile.jpg). Não foi realizada validação em celular físico.
 
@@ -289,7 +314,7 @@ No navegador foram verificados upload de XML fictício, listagem, detalhe, pesqu
 - Layouts municipais de NFS-e variam: o parser XML cobre o namespace ABRASF usado nos exemplos, o retorno municipal paulistano (`RetornoConsulta/NFe`, com ou sem namespace) e o de NF-e o namespace do Portal Fiscal. Padrões nacionais/municipais diferentes podem precisar de novos adaptadores.
 - PDFs com texto são lidos preservando as colunas. Cabeçalhos e linhas de valores são associados por coluna, e a seção de totais tem prioridade sobre itens individuais. RPS não substitui número da NFS-e. O formato municipal denominado `NFe` é classificado como NFS-e por sua estrutura.
 - PDF/imagem depende de rótulos e contexto textual reconhecíveis. Tabelas com ordem de leitura ambígua, fotos inclinadas, baixa nitidez e texto manuscrito podem gerar campos ausentes. OCR não garante recuperação de imagens ruins. Uma foto reconhecida com chave ausente permanece para revisão, preservando os demais campos extraídos.
-- O leitor considera texto útil a partir de 20 caracteres por página; cabeçalhos em páginas com corpo escaneado podem impedir OCR automático. O OCR corrige orientação EXIF, amplia imagens pequenas e relê regiões de total/chave de DANFE localizadas pelos rótulos. Valores conflitantes e chaves não validadas não são aceitos nessa releitura; não há correção automática de dígitos da chave.
+- O leitor considera texto útil a partir de 20 caracteres por página; cabeçalhos em páginas com corpo escaneado podem impedir OCR automático. O OCR corrige orientação EXIF, amplia imagens pequenas e relê regiões de total/chave e das células de emitente/destinatário/data do DANFE localizadas pelo cabeçalho. Em capturas compactas de NF-e, se o OCR ler "N F-e" e perder "DANFE", o leitor relê o cabeçalho e combina uma segunda segmentação antes de classificar o documento. Para NFS-e com cabeçalho no canto superior, relê o número e a data; tabelas de nove montantes com rótulos reconhecidos são mapeadas por coluna. Identificadores só são aceitos na releitura do DANFE se passarem pela validação matemática; valores conflitantes não são aceitos e não há correção automática de dígitos da chave. A versão 8 do extrator reavalia notas anteriores em erro/revisão quando reenviadas; se a chave recuperada apontar para uma nota já cadastrada, o erro antigo é consolidado com ela.
 - Uma nota por documento. Não há separação de arquivos com várias notas nem suporte a XML compactado/ZIP, assinatura digital ou consulta à SEFAZ/prefeituras.
 - Somente CPF/CNPJ numéricos. Identificadores alfanuméricos e regimes tributários específicos não são tratados.
 - ISS, base, alíquota e retenção são extraídos quando o layout expõe rótulos suportados. Não há cálculo/reconciliação tributária completa.

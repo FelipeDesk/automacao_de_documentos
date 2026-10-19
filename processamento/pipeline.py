@@ -10,7 +10,7 @@ from processamento.ia import completar_com_ia
 from extratores.nfe_pdf import extrair_nfe_pdf
 from extratores.nfse_pdf import extrair_nfse_pdf
 
-VERSAO_EXTRACAO = 3
+VERSAO_EXTRACAO = 8
 
 EXTENSOES = {'.xml', '.pdf', '.png', '.jpg', '.jpeg'}
 
@@ -38,7 +38,7 @@ def processar_documento(arquivo):
         raise ValueError('documento_nao_fiscal_ou_layout_desconhecido')
     resultado = normalizar_resultado(dados)
     avaliacao = avaliar_extracao(resultado)
-    resultado, ia = completar_com_ia(resultado, texto, avaliacao)
+    resultado, ia = completar_com_ia(resultado, texto, avaliacao, arquivo)
     resultado = normalizar_resultado(resultado)
     resultado['validacoes'] = validar_resultado(resultado)
     resultado['avaliacao'] = avaliar_extracao(resultado)

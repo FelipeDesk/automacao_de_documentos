@@ -16,14 +16,13 @@ type Dados = {
   avaliacao: {
     completude: number;
     validade: number | null;
-    confianca_estimada: string;
     campos_ausentes: string[];
     inconsistencias: string[];
   };
   metadados: {
     metodo: string;
     ocr_utilizado: boolean;
-    ia: { utilizada: boolean; erro: string | null; chamadas: number };
+    ia: { utilizada: boolean; erro: string | null; chamadas: number; provedor?: string; campos_aceitos?: string[] };
   };
 };
 type Nota = {
@@ -46,6 +45,19 @@ const campoNome: Record<string, string> = {
   "destinatario.cnpj_cpf": "CPF/CNPJ do destinatário",
 };
 const tipoNome = { nfe: "NF-e", nfse: "NFS-e" };
+const explicarErroIA = (erro: string, provedor?: string) => {
+  if (provedor === "gemini" && (erro.includes("RESOURCE_EXHAUSTED") || erro.startsWith("HTTP 429")))
+    return "A cota do Gemini foi atingida. Confira os limites do nível gratuito no Google AI Studio.";
+  if (erro.includes("credit_balance_exhausted"))
+    return "A API da OpenAI está sem créditos. Verifique o saldo e adicione créditos no painel de faturamento.";
+  if (erro.includes("model_not_found"))
+    return "O modelo configurado não está disponível para esta chave. Confira IA_MODELO no backend.";
+  if (erro.startsWith("HTTP 401"))
+    return `A chave da API foi recusada. Confira ${provedor === "gemini" ? "GEMINI_API_KEY" : "OPENAI_API_KEY"} no backend.`;
+  if (provedor === "gemini" && erro.startsWith("HTTP 403"))
+    return "O Gemini recusou o acesso. Confira a chave, o projeto e a disponibilidade do modelo no Google AI Studio.";
+  return `A API retornou ${erro}. Confira as configurações e os limites da conta.`;
+};
 const moeda = (valor: number | null | undefined) =>
   valor == null
     ? "Não informado"
@@ -62,6 +74,56 @@ async function requisitar<T>(url: string, opcoes?: RequestInit): Promise<T> {
     );
   }
   return resposta.json();
+}
+
+type Previa = { estado: "carregando" | "pronta" | "erro"; tipo?: "imagem" | "pdf" | "xml"; url?: string; texto?: string };
+
+function PreviaDocumento({ id, origem }: { id: string; origem: string }) {
+  const [previa, setPrevia] = useState<Previa>({ estado: "carregando" });
+  useEffect(() => {
+    const controlador = new AbortController();
+    let endereco: string | undefined;
+    setPrevia({ estado: "carregando" });
+    async function carregarArquivo() {
+      try {
+        const resposta = await fetch(`/api/notas/${id}/arquivo`, { signal: controlador.signal });
+        if (!resposta.ok) throw new Error("arquivo indisponível");
+        const tipo = resposta.headers.get("content-type") || "";
+        if (tipo.startsWith("text/plain")) {
+          const texto = await resposta.text();
+          if (!controlador.signal.aborted) setPrevia({ estado: "pronta", tipo: "xml", texto });
+        } else if (tipo.startsWith("image/") || tipo.startsWith("application/pdf")) {
+          const arquivo = await resposta.blob();
+          if (controlador.signal.aborted) return;
+          endereco = URL.createObjectURL(arquivo);
+          setPrevia({ estado: "pronta", tipo: tipo.startsWith("image/") ? "imagem" : "pdf", url: endereco });
+        } else {
+          throw new Error("formato não disponível");
+        }
+      } catch {
+        if (!controlador.signal.aborted) setPrevia({ estado: "erro" });
+      }
+    }
+    void carregarArquivo();
+    return () => { controlador.abort(); if (endereco) URL.revokeObjectURL(endereco); };
+  }, [id]);
+
+  return (
+    <section className="document-preview" aria-label="Documento original">
+      <div className="preview-heading">
+        <div><span className="eyebrow">ARQUIVO ORIGINAL</span><strong title={origem}>{origem}</strong></div>
+        {previa.estado === "pronta" && previa.url &&
+          <a href={previa.url} target="_blank" rel="noopener noreferrer">Abrir ↗</a>}
+      </div>
+      <div className="preview-stage">
+        {previa.estado === "carregando" && <p role="status">Carregando documento…</p>}
+        {previa.estado === "erro" && <p role="alert">O arquivo original não está disponível para visualização.</p>}
+        {previa.tipo === "imagem" && previa.url && <img src={previa.url} alt={`Documento ${origem}`} />}
+        {previa.tipo === "pdf" && previa.url && <iframe src={previa.url} title={`Documento ${origem}`} />}
+        {previa.tipo === "xml" && <pre>{previa.texto}</pre>}
+      </div>
+    </section>
+  );
 }
 
 function App() {
@@ -483,6 +545,7 @@ function App() {
         </div>
       </dialog>
       <dialog
+        className="document-dialog"
         ref={dialog}
         onClose={() => setSelecionada(null)}
         onClick={(e) => {
@@ -521,6 +584,8 @@ function App() {
           </>
         )}
         {selecionada?.erro && <p className="error">{selecionada.erro}</p>}
+        <div className="detail-layout">
+          <div className="detail-content">
         {detalhes && (
           <>
             <dl>
@@ -540,9 +605,9 @@ function App() {
                 "OCR utilizado": detalhes.metadados.ocr_utilizado
                   ? "Sim"
                   : "Não",
-                "IA utilizada": detalhes.metadados.ia.utilizada
-                  ? "Sim — conferir campos"
-                  : "Não",
+                "IA acionada": detalhes.metadados.ia.utilizada ? "Sim" : "Não",
+                "Provedor IA": detalhes.metadados.ia.provedor || "Não configurado",
+                "Campos preenchidos pela IA": detalhes.metadados.ia.campos_aceitos?.join(", ") || "Nenhum",
               }).map(([nome, valor]) => (
                 <div key={nome}>
                   <dt>{nome}</dt>
@@ -559,10 +624,6 @@ function App() {
                   ? "Não avaliada"
                   : `${detalhes.avaliacao.validade}%`}
               </p>
-              <p>
-                Confiança heurística: {detalhes.avaliacao.confianca_estimada}.
-                Não representa probabilidade de acerto.
-              </p>
               {!!detalhes.avaliacao.campos_ausentes.length && (
                 <p>
                   <b>Campos ausentes:</b>{" "}
@@ -577,8 +638,8 @@ function App() {
               )}
               {detalhes.metadados.ia.erro && (
                 <p className="error">
-                  Falha no auxílio de IA: {detalhes.metadados.ia.erro}. Extração
-                  local preservada.
+                  Falha no auxílio de IA: {explicarErroIA(detalhes.metadados.ia.erro, detalhes.metadados.ia.provedor)}
+                  {" "}Extração local preservada.
                 </p>
               )}
             </section>
@@ -588,6 +649,9 @@ function App() {
             </details>
           </>
         )}
+          </div>
+          {selecionada && <PreviaDocumento id={selecionada.id} origem={selecionada.origem} />}
+        </div>
       </dialog>
     </div>
   );

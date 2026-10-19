@@ -43,3 +43,17 @@ def test_exclusao_por_alias_remove_todos_os_hashes(tmp_path):
     assert banco.obter('b') is None
     assert banco.excluir('a') is None
     assert not banco.salvar(registro('b'))['duplicado']
+
+
+def test_reavaliacao_de_erro_consolida_mesma_chave(tmp_path):
+    banco = Banco(tmp_path / 'notas.sqlite3')
+    banco.salvar(registro('pdf', 'chave-valida'))
+    falha = registro('foto', None)
+    falha.update(status='erro', dados=None, erro='layout desconhecido')
+    banco.salvar(falha)
+    corrigido = registro('foto', 'chave-valida')
+    resultado = banco.salvar(corrigido, atualizar=True)
+    assert resultado['duplicado']
+    assert resultado['id'] == 'pdf'
+    assert banco.obter('foto')['id'] == 'pdf'
+    assert len(banco.listar()) == 1

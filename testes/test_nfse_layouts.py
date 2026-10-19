@@ -25,3 +25,23 @@ def test_liquido_nao_substitui_bruto():
     dados = extrair_nfse_pdf('NFS-e VALOR LÍQUIDO DA NFS-E: R$ 95,00')
     assert dados['valor_total'] is None
     assert dados['valor_liquido'] == '95,00'
+
+
+def test_nfse_foto_cpf_com_espaco_e_tabela_de_valores():
+    texto = '''NFS-e\nNÚMERO NFS-E: 507800\nDATA DA EMISSÃO: 03/08/2025
+PRESTADOR DE SERVIÇOS
+CNPJ/CPF: 07.594.978/0150-19
+Nome/Razão Social: Empresa de Ginástica SA
+TOMADOR DE SERVIÇOS
+CNPJ/CPF: 531.932 898-25
+Nome/Razão Social: Cliente Exemplo
+VALORES
+Valor Serviço  Desc. Cond.  Desc. Incond.  Deduções  Base de Cálculo  Alig. ISS (%)  Valor ISS  ISSQN Retido  Valor Liquido  ISS Retido  Trib. Aprox.
+R$ 99,90  R$ 0,00  R$ 0,00  R$ 0,00  R$ 99,90  2,0000  R$ 2,00  R$ 0,00  R$ 99,90  NÃO  R$ 11,24
+RETENÇÕES FEDERAIS'''
+    dados = normalizar_resultado(extrair_nfse_pdf(texto))
+    assert dados['numero_nota'] == '507800'
+    assert dados['destinatario']['cnpj_cpf'] == '531.932.898-25'
+    assert dados['valor_total'] == dados['valor_liquido'] == 99.9
+    assert dados['base_calculo_iss'] == 99.9
+    assert dados['valor_iss'] == 2

@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
+import hashlib
 from api import criar_app
+from processamento.banco import Banco
 
 XML = b'<NFe xmlns="http://www.portalfiscal.inf.br/nfe"><infNFe/></NFe>'
 
@@ -53,3 +55,34 @@ def test_excluir_nota_remove_exportacoes_e_permite_reenvio(tmp_path):
     reenvio = cliente.post('/api/upload', files={'arquivo': ('nota.xml', XML)}).json()
     assert not reenvio['duplicado']
     assert len(cliente.get('/api/notas').json()) == 1
+
+
+def test_visualizacao_original_xml_e_exclusao(tmp_path):
+    cliente = TestClient(criar_app(tmp_path))
+    nota = cliente.post('/api/upload', files={'arquivo': ('nota.xml', XML)}).json()
+    resposta = cliente.get(f"/api/notas/{nota['id']}/arquivo")
+    assert resposta.status_code == 200
+    assert resposta.content == XML
+    assert resposta.headers['content-type'].startswith('text/plain')
+    assert resposta.headers['cache-control'] == 'private, no-store'
+    assert resposta.headers['x-content-type-options'] == 'nosniff'
+    assert cliente.get('/api/notas/../../arquivo').status_code == 404
+    assert cliente.delete(f"/api/notas/{nota['id']}").status_code == 200
+    assert cliente.get(f"/api/notas/{nota['id']}/arquivo").status_code == 404
+
+
+def test_visualizacao_original_imagem_e_pdf(tmp_path):
+    cliente = TestClient(criar_app(tmp_path))
+    for extensao, tipo, conteudo in (('jpg', 'image/jpeg', b'\xff\xd8foto'),
+                                     ('pdf', 'application/pdf', b'%PDF-1.4\n')):
+        identificador = hashlib.sha256(conteudo).hexdigest()
+        Banco(tmp_path / 'notas.sqlite3').salvar({
+            'id': identificador, 'origem': f'nota.{extensao}', 'status': 'erro',
+            'dados': None, 'erro': 'teste', 'processado_em': '2026-10-17T00:00:00Z'})
+        pasta = tmp_path / 'erros'
+        pasta.mkdir(exist_ok=True)
+        (pasta / f'{identificador}.{extensao}').write_bytes(conteudo)
+        resposta = cliente.get(f'/api/notas/{identificador}/arquivo')
+        assert resposta.status_code == 200
+        assert resposta.headers['content-type'].startswith(tipo)
+        assert resposta.content == conteudo

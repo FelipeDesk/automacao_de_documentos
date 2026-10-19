@@ -1,6 +1,7 @@
 """API local síncrona: a resposta do upload já contém o resultado do processamento."""
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -9,6 +10,7 @@ from typing import Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from processamento.banco import Banco
 from processamento.lote import processar_recebido, exportar_csv
 from processamento.pipeline import EXTENSOES
@@ -17,7 +19,7 @@ MAX_UPLOAD = 20 * 1024 * 1024
 
 
 def criar_app(base=None):
-    base = Path(base or os.getenv('DADOS_DIR', Path(__file__).resolve().parent))
+    base = Path(base or os.getenv('DADOS_DIR', Path(__file__).resolve().parent)).resolve()
     app = FastAPI(title='Notas fiscais locais', version='1.0.0')
     trava = Lock()
 
@@ -32,6 +34,25 @@ def criar_app(base=None):
         if registro is None:
             raise HTTPException(404, 'Nota não encontrada')
         return registro
+
+    @app.get('/api/notas/{identificador}/arquivo')
+    def visualizar_arquivo(identificador: str):
+        """Serve somente o original associado a uma nota ainda cadastrada."""
+        if not re.fullmatch(r'[0-9a-f]{64}', identificador):
+            raise HTTPException(404, 'Arquivo não encontrado')
+        if Banco(base / 'notas.sqlite3').obter(identificador) is None:
+            raise HTTPException(404, 'Arquivo não encontrado')
+        tipos = {'.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                 '.png': 'image/png', '.xml': 'text/plain; charset=utf-8'}
+        for pasta in ('processados', 'revisao', 'erros'):
+            for extensao, tipo in tipos.items():
+                raiz = (base / pasta).resolve()
+                caminho = (raiz / f'{identificador}{extensao}').resolve()
+                if caminho.parent == raiz and caminho.is_file():
+                    return FileResponse(caminho, media_type=tipo,
+                        headers={'Cache-Control': 'private, no-store',
+                                 'X-Content-Type-Options': 'nosniff'})
+        raise HTTPException(404, 'Arquivo não encontrado')
 
     @app.get('/api/processamentos/{identificador}')
     def consultar_status(identificador: str):

@@ -36,3 +36,8 @@ def test_documento_desconhecido():
     resultado = identificar_tipo_pdf(texto)
 
     assert resultado == "desconhecido"
+
+
+def test_danfe_compacto_com_nf_e_separado_pelo_ocr():
+    texto = "N F-e\nConsulta de autenticidade no site da Sefaz\nNOTA FISCAL INDICADA AO LADO\nSÉRIE: 1"
+    assert identificar_tipo_pdf(texto) == 'nfe'
