@@ -1,113 +1,133 @@
-"""API local síncrona: a resposta do upload já contém o resultado do processamento."""
-import logging
+"""API pública: cada upload é processado e descartado na própria requisição."""
 import os
-import re
-import shutil
+import time
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from threading import Lock
-from typing import Literal
+from threading import BoundedSemaphore, Lock
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
-from processamento.banco import Banco
-from processamento.lote import processar_recebido, exportar_csv
-from processamento.pipeline import EXTENSOES
+from fastapi import FastAPI, HTTPException, Request, UploadFile
+
+from processamento.pipeline import EXTENSOES, processar_documento
 
 MAX_UPLOAD = 20 * 1024 * 1024
+ASSINATURAS = {
+    '.pdf': b'%PDF-', '.png': b'\x89PNG\r\n\x1a\n',
+    '.jpg': b'\xff\xd8', '.jpeg': b'\xff\xd8',
+}
+TIPOS = {
+    '.xml': {'application/xml', 'text/xml'},
+    '.pdf': {'application/pdf'},
+    '.png': {'image/png'},
+    '.jpg': {'image/jpeg'}, '.jpeg': {'image/jpeg'},
+}
 
 
-def criar_app(base=None):
-    base = Path(base or os.getenv('DADOS_DIR', Path(__file__).resolve().parent)).resolve()
-    app = FastAPI(title='Notas fiscais locais', version='1.0.0')
-    trava = Lock()
+class LimiteUploads:
+    """Conta apenas requisições por IP; nunca guarda documentos nem resultados."""
 
-    @app.get('/api/notas')
-    def listar_notas(tipo: Literal['nfe', 'nfse'] | None = None, busca: str = '',
-                     limite: int = Query(100, ge=1, le=500), deslocamento: int = Query(0, ge=0)):
-        return Banco(base / 'notas.sqlite3').listar(tipo, busca, limite, deslocamento)
+    def __init__(self, por_minuto):
+        self.por_minuto = por_minuto
+        self.eventos = {}
+        self.trava = Lock()
 
-    @app.get('/api/notas/{identificador}')
-    def consultar_nota(identificador: str):
-        registro = Banco(base / 'notas.sqlite3').obter(identificador)
-        if registro is None:
-            raise HTTPException(404, 'Nota não encontrada')
-        return registro
+    def aceitar(self, cliente):
+        agora = time.monotonic()
+        with self.trava:
+            for endereco, eventos in list(self.eventos.items()):
+                while eventos and eventos[0] <= agora - 60:
+                    eventos.popleft()
+                if not eventos:
+                    del self.eventos[endereco]
+            eventos = self.eventos.setdefault(cliente, deque())
+            if len(eventos) >= self.por_minuto:
+                return False
+            eventos.append(agora)
+            return True
 
-    @app.get('/api/notas/{identificador}/arquivo')
-    def visualizar_arquivo(identificador: str):
-        """Serve somente o original associado a uma nota ainda cadastrada."""
-        if not re.fullmatch(r'[0-9a-f]{64}', identificador):
-            raise HTTPException(404, 'Arquivo não encontrado')
-        if Banco(base / 'notas.sqlite3').obter(identificador) is None:
-            raise HTTPException(404, 'Arquivo não encontrado')
-        tipos = {'.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-                 '.png': 'image/png', '.xml': 'text/plain; charset=utf-8'}
-        for pasta in ('processados', 'revisao', 'erros'):
-            for extensao, tipo in tipos.items():
-                raiz = (base / pasta).resolve()
-                caminho = (raiz / f'{identificador}{extensao}').resolve()
-                if caminho.parent == raiz and caminho.is_file():
-                    return FileResponse(caminho, media_type=tipo,
-                        headers={'Cache-Control': 'private, no-store',
-                                 'X-Content-Type-Options': 'nosniff'})
-        raise HTTPException(404, 'Arquivo não encontrado')
 
-    @app.get('/api/processamentos/{identificador}')
-    def consultar_status(identificador: str):
-        registro = consultar_nota(identificador)
-        return {k: registro.get(k) for k in ('id', 'status', 'erro', 'processado_em')}
+def _validar(conteudo, extensao, tipo):
+    if len(conteudo) > MAX_UPLOAD:
+        raise HTTPException(413, 'Arquivo excede 20 MB')
+    if not conteudo:
+        raise HTTPException(400, 'Arquivo vazio')
+    # Alguns navegadores enviam octet-stream quando não reconhecem XML.
+    tipo = (tipo or '').split(';', 1)[0].strip().lower()
+    if tipo and tipo not in TIPOS[extensao] | {'application/octet-stream'}:
+        raise HTTPException(415, 'Tipo MIME incompatível com a extensão')
+    if extensao in ASSINATURAS and not conteudo.startswith(ASSINATURAS[extensao]):
+        raise HTTPException(415, 'Conteúdo incompatível com a extensão')
+    if extensao == '.xml':
+        inicio = conteudo.removeprefix(b'\xef\xbb\xbf').lstrip()
+        if not inicio.startswith(b'<'):
+            raise HTTPException(415, 'Conteúdo incompatível com XML')
+        if b'<!DOCTYPE' in conteudo.upper() or b'<!ENTITY' in conteudo.upper():
+            raise HTTPException(400, 'Declarações DTD e entidades não são permitidas')
 
-    @app.delete('/api/notas/{identificador}')
-    def excluir_nota(identificador: str):
-        with trava:
-            hashes = Banco(base / 'notas.sqlite3').excluir(identificador)
-            if hashes is None:
-                raise HTTPException(404, 'Nota não encontrada')
-            pasta = (base / 'resultados' / 'registros').resolve()
-            for digest in hashes:
-                caminho = (pasta / f'{digest}.json').resolve()
-                if caminho.parent == pasta:
-                    caminho.unlink(missing_ok=True)
-            exportar_csv(base)
-        return {'excluida': True}
+
+def criar_app(temporarios_dir=None, *, requisicoes_por_minuto=None, simultaneos=None):
+    """O diretório opcional serve para testar a limpeza; produção usa o temp do SO."""
+    if requisicoes_por_minuto is None:
+        requisicoes_por_minuto = max(1, int(os.getenv('UPLOADS_POR_MINUTO', '10')))
+    if simultaneos is None:
+        simultaneos = max(1, int(os.getenv('UPLOADS_SIMULTANEOS', '2')))
+    app = FastAPI(title='Extração temporária de notas fiscais', version='2.0.0')
+    limite = LimiteUploads(requisicoes_por_minuto)
+    vagas = BoundedSemaphore(simultaneos)
+
+    @app.middleware('http')
+    async def impedir_cache(request: Request, call_next):
+        resposta = await call_next(request)
+        if request.url.path.startswith('/api/'):
+            resposta.headers['Cache-Control'] = 'no-store'
+            resposta.headers['X-Content-Type-Options'] = 'nosniff'
+        return resposta
 
     @app.post('/api/upload')
-    def upload(arquivo: UploadFile):
-        nome = Path((arquivo.filename or '').replace('\\', '/')).name
-        extensao = Path(nome).suffix.lower()
+    def upload(request: Request, arquivo: UploadFile):
+        reservou_vaga = False
         try:
+            # Não aceitar cabeçalhos de IP informados pelo próprio cliente.
+            cliente = request.client.host if request.client else 'desconhecido'
+            if not limite.aceitar(cliente):
+                raise HTTPException(429, 'Limite de uploads por minuto excedido', headers={'Retry-After': '60'})
+            reservou_vaga = vagas.acquire(blocking=False)
+            if not reservou_vaga:
+                raise HTTPException(429, 'Muitos documentos em processamento', headers={'Retry-After': '5'})
+            nome = Path((arquivo.filename or '').replace('\\', '/')).name
+            extensao = Path(nome).suffix.lower()
             if extensao not in EXTENSOES:
                 raise HTTPException(415, 'Formato permitido: XML, PDF, JPG, JPEG ou PNG')
             conteudo = arquivo.file.read(MAX_UPLOAD + 1)
-            if len(conteudo) > MAX_UPLOAD:
-                raise HTTPException(413, 'Arquivo excede 20 MB')
-            if not conteudo:
-                raise HTTPException(400, 'Arquivo vazio')
-            assinatura = {'.pdf': b'%PDF-', '.png': b'\x89PNG\r\n\x1a\n', '.jpg': b'\xff\xd8', '.jpeg': b'\xff\xd8'}
-            if extensao in assinatura and not conteudo.startswith(assinatura[extensao]):
-                raise HTTPException(415, 'Conteúdo incompatível com a extensão')
-            if extensao == '.xml' and (b'<!DOCTYPE' in conteudo.upper() or b'<!ENTITY' in conteudo.upper()):
-                raise HTTPException(400, 'Declarações DTD e entidades não são permitidas')
-            uploads = base / 'uploads'
-            uploads.mkdir(parents=True, exist_ok=True)
-            with trava, TemporaryDirectory(dir=uploads) as temporario:
-                caminho = Path(temporario) / nome
-                caminho.write_bytes(conteudo)
-                registro = processar_recebido(caminho, base)
-                pasta = {'sucesso':'processados', 'revisao_necessaria':'revisao', 'erro':'erros'}[registro['status']]
-                destino = base / pasta / f"{registro['id']}{extensao}"
-                if destino.exists():
-                    destino = base / 'duplicados' / f'{uuid4().hex}{extensao}'
-                destino.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(caminho), str(destino))
-                return registro
+            _validar(conteudo, extensao, arquivo.content_type)
+            registro = {
+                'id': uuid4().hex,
+                'origem': nome,
+                'status': 'erro',
+                'dados': None,
+                'erro': None,
+                'processado_em': datetime.now(timezone.utc).isoformat(),
+            }
+            try:
+                with TemporaryDirectory(prefix='nota-', dir=temporarios_dir) as temporario:
+                    caminho = Path(temporario) / f'documento{extensao}'
+                    caminho.write_bytes(conteudo)
+                    dados = processar_documento(caminho)
+                registro['dados'] = dados
+                registro['status'] = ('sucesso' if dados['avaliacao']['status_extracao'] == 'completo'
+                                      else 'revisao_necessaria')
+            except Exception as erro:
+                registro['erro'] = (f'Falha de leitura ou extração ({type(erro).__name__}). '
+                                    'Verifique formato, integridade, layout e configuração de OCR.')
+            return registro
         finally:
             arquivo.file.close()
+            if reservou_vaga:
+                vagas.release()
 
     return app
 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 app = criar_app()

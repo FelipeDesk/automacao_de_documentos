@@ -32,8 +32,8 @@ type Nota = {
   dados: Dados | null;
   erro: string | null;
   processado_em: string;
-  duplicado: boolean;
 };
+type NotaSessao = Nota & { arquivo: File };
 const statusNome = {
   sucesso: "Concluída",
   erro: "Erro",
@@ -76,50 +76,82 @@ async function requisitar<T>(url: string, opcoes?: RequestInit): Promise<T> {
   return resposta.json();
 }
 
+function baixar(conteudo: string, tipo: string, nome: string) {
+  const url = URL.createObjectURL(new Blob([conteudo], { type: tipo }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function csvSeguro(valor: unknown): string {
+  let texto = valor == null ? "" : String(valor);
+  if (/^[\s\u0000-\u001f]*[=+\-@]/.test(texto)) texto = `'${texto}`;
+  return `"${texto.replace(/"/g, '""')}"`;
+}
+
+function exportar(notas: NotaSessao[], formato: "json" | "csv") {
+  const registros: Nota[] = notas.map(({ arquivo: _arquivo, ...nota }) => nota);
+  if (formato === "json") {
+    baixar(JSON.stringify(registros, null, 2), "application/json;charset=utf-8", "notas-sessao.json");
+    return;
+  }
+  const campos = ["id", "origem", "tipo", "numero_nota", "cnpj_emitente", "documento_destinatario",
+    "data_emissao", "data_vencimento", "valor_total", "valor_liquido", "valor_iss", "status", "metodo", "ia_utilizada"];
+  const linhas = registros.map((n) => {
+    const d = n.dados;
+    const valores = [n.id, n.origem, d?.tipo, d?.numero_nota, d?.emitente.cnpj,
+      d?.destinatario.cnpj_cpf, d?.data_emissao, d?.data_vencimento, d?.valor_total,
+      d?.valor_liquido, d?.valor_iss, n.status, d?.metadados.metodo, d?.metadados.ia.utilizada];
+    return valores.map(csvSeguro).join(";");
+  });
+  baixar(`\uFEFF${campos.join(";")}\r\n${linhas.join("\r\n")}`, "text/csv;charset=utf-8", "notas-sessao.csv");
+}
+
 type Previa = { estado: "carregando" | "pronta" | "erro"; tipo?: "imagem" | "pdf" | "xml"; url?: string; texto?: string };
 
-function PreviaDocumento({ id, origem }: { id: string; origem: string }) {
+function PreviaDocumento({ arquivo }: { arquivo: File }) {
   const [previa, setPrevia] = useState<Previa>({ estado: "carregando" });
   useEffect(() => {
-    const controlador = new AbortController();
+    let ativo = true;
     let endereco: string | undefined;
     setPrevia({ estado: "carregando" });
     async function carregarArquivo() {
       try {
-        const resposta = await fetch(`/api/notas/${id}/arquivo`, { signal: controlador.signal });
-        if (!resposta.ok) throw new Error("arquivo indisponível");
-        const tipo = resposta.headers.get("content-type") || "";
-        if (tipo.startsWith("text/plain")) {
-          const texto = await resposta.text();
-          if (!controlador.signal.aborted) setPrevia({ estado: "pronta", tipo: "xml", texto });
-        } else if (tipo.startsWith("image/") || tipo.startsWith("application/pdf")) {
-          const arquivo = await resposta.blob();
-          if (controlador.signal.aborted) return;
+        const extensao = arquivo.name.split(".").pop()?.toLowerCase();
+        if (extensao === "xml") {
+          const texto = await arquivo.text();
+          if (ativo) setPrevia({ estado: "pronta", tipo: "xml", texto });
+        } else if (["jpg", "jpeg", "png", "pdf"].includes(extensao || "")) {
+          if (!ativo) return;
           endereco = URL.createObjectURL(arquivo);
-          setPrevia({ estado: "pronta", tipo: tipo.startsWith("image/") ? "imagem" : "pdf", url: endereco });
+          setPrevia({ estado: "pronta", tipo: extensao === "pdf" ? "pdf" : "imagem", url: endereco });
         } else {
           throw new Error("formato não disponível");
         }
       } catch {
-        if (!controlador.signal.aborted) setPrevia({ estado: "erro" });
+        if (ativo) setPrevia({ estado: "erro" });
       }
     }
     void carregarArquivo();
-    return () => { controlador.abort(); if (endereco) URL.revokeObjectURL(endereco); };
-  }, [id]);
+    return () => { ativo = false; if (endereco) URL.revokeObjectURL(endereco); };
+  }, [arquivo]);
 
   return (
     <section className="document-preview" aria-label="Documento original">
       <div className="preview-heading">
-        <div><span className="eyebrow">ARQUIVO ORIGINAL</span><strong title={origem}>{origem}</strong></div>
+        <div><span className="eyebrow">ARQUIVO ORIGINAL</span><strong title={arquivo.name}>{arquivo.name}</strong></div>
         {previa.estado === "pronta" && previa.url &&
           <a href={previa.url} target="_blank" rel="noopener noreferrer">Abrir ↗</a>}
       </div>
       <div className="preview-stage">
         {previa.estado === "carregando" && <p role="status">Carregando documento…</p>}
         {previa.estado === "erro" && <p role="alert">O arquivo original não está disponível para visualização.</p>}
-        {previa.tipo === "imagem" && previa.url && <img src={previa.url} alt={`Documento ${origem}`} />}
-        {previa.tipo === "pdf" && previa.url && <iframe src={previa.url} title={`Documento ${origem}`} />}
+        {previa.tipo === "imagem" && previa.url && <img src={previa.url} alt={`Documento ${arquivo.name}`} />}
+        {previa.tipo === "pdf" && previa.url && <iframe src={previa.url} title={`Documento ${arquivo.name}`} />}
         {previa.tipo === "xml" && <pre>{previa.texto}</pre>}
       </div>
     </section>
@@ -127,16 +159,14 @@ function PreviaDocumento({ id, origem }: { id: string; origem: string }) {
 }
 
 function App() {
-  const [notas, setNotas] = useState<Nota[]>([]);
+  const [notas, setNotas] = useState<NotaSessao[]>([]);
   const [busca, setBusca] = useState("");
   const [tipo, setTipo] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("");
-  const [selecionada, setSelecionada] = useState<Nota | null>(null);
-  const [excluir, setExcluir] = useState<Nota | null>(null);
-  const [excluindo, setExcluindo] = useState(false);
+  const [selecionada, setSelecionada] = useState<NotaSessao | null>(null);
+  const [excluir, setExcluir] = useState<NotaSessao | null>(null);
   const confirmacao = useRef<HTMLDialogElement>(null);
   const [ordem, setOrdem] = useState("recentes");
-  const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [arrastando, setArrastando] = useState(false);
   const [erro, setErro] = useState("");
@@ -144,30 +174,6 @@ function App() {
   const input = useRef<HTMLInputElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
 
-  async function carregar() {
-    setCarregando(true);
-    try {
-      const todos: Nota[] = [];
-      for (let deslocamento = 0; ; deslocamento += 500) {
-        const pagina = await requisitar<Nota[]>(
-          `/api/notas?limite=500&deslocamento=${deslocamento}`,
-        );
-        todos.push(...pagina);
-        if (pagina.length < 500) break;
-      }
-      setNotas(todos);
-      setErro("");
-    } catch {
-      setErro(
-        "Não foi possível conectar à API. Verifique se o servidor está em execução e tente atualizar.",
-      );
-    } finally {
-      setCarregando(false);
-    }
-  }
-  useEffect(() => {
-    void carregar();
-  }, []);
   useEffect(() => {
     if (selecionada) dialog.current?.showModal();
   }, [selecionada]);
@@ -176,21 +182,13 @@ function App() {
     if (excluir) confirmacao.current?.showModal();
   }, [excluir]);
 
-  async function confirmarExclusao() {
-    if (!excluir || excluindo) return;
-    setExcluindo(true);
-    try {
-      await requisitar(`/api/notas/${excluir.id}`, { method: "DELETE" });
-      setNotas((lista) => lista.filter((n) => n.id !== excluir.id));
-      setMensagem("Nota excluída da lista. Você pode enviar o arquivo novamente.");
-      setErro("");
-      confirmacao.current?.close();
-      setExcluir(null);
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não foi possível excluir a nota.");
-    } finally {
-      setExcluindo(false);
-    }
+  function confirmarExclusao() {
+    if (!excluir) return;
+    setNotas((lista) => lista.filter((n) => n.id !== excluir.id));
+    setMensagem("Nota removida desta sessão.");
+    setErro("");
+    confirmacao.current?.close();
+    setExcluir(null);
   }
 
   async function enviar(arquivos: FileList | File[]) {
@@ -199,8 +197,7 @@ function App() {
     setErro("");
     setMensagem("");
     const falhas: string[] = [];
-    let processados = 0,
-      duplicados = 0;
+    let processados = 0;
     for (const arquivo of Array.from(arquivos)) {
       setMensagem(`Processando ${arquivo.name}…`);
       if (
@@ -217,18 +214,15 @@ function App() {
           method: "POST",
           body: form,
         });
-        if (nota.duplicado) duplicados++;
-        else processados++;
+        setNotas((lista) => [{ ...nota, arquivo }, ...lista]);
+        processados++;
       } catch (e) {
         falhas.push(
           `${arquivo.name}: ${e instanceof Error ? e.message : "Falha no envio."}`,
         );
       }
     }
-    await carregar();
-    setMensagem(
-      `${processados} documento(s) processado(s). ${duplicados} duplicado(s). Confira o status na lista.`,
-    );
+    setMensagem(`${processados} documento(s) processado(s). Confira o status na lista.`);
     if (falhas.length) setErro(falhas.join(" "));
     setEnviando(false);
     if (input.current) input.current.value = "";
@@ -285,8 +279,8 @@ function App() {
           </span>
         </button>
         <div className="local-note">
-          <span className="green-dot" /> Processamento local
-          <p>Seus documentos organizados, com você no controle.</p>
+          <span className="green-dot" /> Sessão temporária
+          <p>Os dados desta aba desaparecem ao recarregar ou fechar a página.</p>
         </div>
       </aside>
       <main id="inicio">
@@ -298,17 +292,14 @@ function App() {
         </header>
         <div className="heading">
           <div>
-            <span className="eyebrow">GESTÃO DE DOCUMENTOS</span>
+            <span className="eyebrow">SESSÃO TEMPORÁRIA</span>
             <h1>Notas fiscais</h1>
-            <p>Do arquivo aos dados. Tudo em um só lugar.</p>
+            <p>Extraia e organize nesta aba. Exporte antes de sair.</p>
           </div>
-          <button
-            className="secondary"
-            onClick={() => void carregar()}
-            disabled={carregando || enviando}
-          >
-            ↻ Atualizar
-          </button>
+          <div className="export-actions">
+            <button className="secondary" disabled={!notas.length || enviando} onClick={() => exportar(notas, "json")}>Exportar JSON</button>
+            <button className="secondary" disabled={!notas.length || enviando} onClick={() => exportar(notas, "csv")}>Exportar CSV</button>
+          </div>
         </div>
         <section className="stats" aria-label="Resumo dos documentos">
           <div>
@@ -495,7 +486,7 @@ function App() {
                       >
                         Ver detalhes ↗
                       </button>
-                      <button className="delete-button" disabled={enviando || excluindo}
+                      <button className="delete-button" disabled={enviando}
                         aria-label={`Excluir nota ${n.dados?.numero_nota || n.origem}`}
                         onClick={() => { setErro(""); setExcluir(n); }}>Excluir</button>
                     </td>
@@ -508,9 +499,7 @@ function App() {
             <div className="empty">
               <span>▤</span>
               <h3>
-                {carregando
-                  ? "Carregando documentos…"
-                  : notas.length
+                {notas.length
                     ? "Nenhum documento encontrado"
                     : "Sua organização começa aqui"}
               </h3>
@@ -523,7 +512,7 @@ function App() {
           )}
           <footer>
             {visiveis.length} de {notas.length} documentos · Valor bruto visível: {moeda(visiveis.reduce((soma, n) => soma + (n.dados?.valor_total ?? 0), 0))}
-            <span>Extração local primeiro</span>
+            <span>Resultados só nesta aba</span>
           </footer>
         </section>
         <p className="page-note">
@@ -532,16 +521,15 @@ function App() {
         </p>
       </main>
       <dialog ref={confirmacao} className="delete-dialog" aria-labelledby="delete-title"
-        onCancel={(e) => { if (excluindo) e.preventDefault(); }}
         onClose={() => setExcluir(null)}>
         <span className="eyebrow">GERENCIAR DOCUMENTO</span>
         <h2 id="delete-title">Excluir esta nota?</h2>
         <p><b>{excluir?.dados?.numero_nota ? `Nota ${excluir.dados.numero_nota}` : excluir?.origem}</b></p>
-        <p>A nota será removida da lista e das exportações. Os arquivos originais serão preservados. Para recuperar o registro, envie o arquivo novamente.</p>
+        <p>A nota e sua prévia serão removidas desta aba e das exportações. Para recuperá-las, envie o arquivo novamente.</p>
         {erro && <p className="error" role="alert">{erro}</p>}
         <div className="dialog-actions">
-          <button className="secondary" disabled={excluindo} onClick={() => confirmacao.current?.close()}>Cancelar</button>
-          <button className="danger" disabled={excluindo} onClick={() => void confirmarExclusao()}>{excluindo ? "Excluindo…" : "Excluir nota"}</button>
+          <button className="secondary" onClick={() => confirmacao.current?.close()}>Cancelar</button>
+          <button className="danger" onClick={confirmarExclusao}>Excluir nota</button>
         </div>
       </dialog>
       <dialog
@@ -650,7 +638,7 @@ function App() {
           </>
         )}
           </div>
-          {selecionada && <PreviaDocumento id={selecionada.id} origem={selecionada.origem} />}
+          {selecionada && <PreviaDocumento arquivo={selecionada.arquivo} />}
         </div>
       </dialog>
     </div>

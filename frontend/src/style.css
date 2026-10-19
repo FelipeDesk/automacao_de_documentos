@@ -868,3 +868,5 @@ dialog::backdrop { background: #04070bca; }
   tbody tr:hover { background: #202a33; }
   button:not(:disabled):hover { filter: brightness(1.13); }
 }
+.export-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+@media (max-width: 800px) { .export-actions { justify-content: flex-start; } }

@@ -1,88 +1,131 @@
+"""Contrato da API pública sem estado fiscal compartilhado."""
+import os
+from pathlib import Path
+
 from fastapi.testclient import TestClient
-import hashlib
+import pytest
+
 from api import criar_app
-from processamento.banco import Banco
-
-XML = b'<NFe xmlns="http://www.portalfiscal.inf.br/nfe"><infNFe/></NFe>'
 
 
-def test_upload_consulta_status_duplicado(tmp_path):
+FIXTURES = Path(__file__).parent / 'fixtures'
+XML = (FIXTURES / 'nfe_teste.xml').read_bytes()
+
+
+def enviar(cliente, nome='nota.xml', conteudo=XML, tipo='application/xml'):
+    return cliente.post('/api/upload', files={'arquivo': (nome, conteudo, tipo)})
+
+
+def test_upload_xml_retorna_json_sem_persistencia(tmp_path):
     with TestClient(criar_app(tmp_path)) as cliente:
-        resposta = cliente.post('/api/upload', files={'arquivo':('../../nota.xml', XML, 'application/xml')})
+        resposta = enviar(cliente, '../../nota.xml')
         assert resposta.status_code == 200
         nota = resposta.json()
-        assert nota['status'] == 'revisao_necessaria'
         assert nota['origem'] == 'nota.xml'
-        assert cliente.get('/api/notas').json()[0]['id'] == nota['id']
-        assert cliente.get(f"/api/notas/{nota['id']}").status_code == 200
-        assert cliente.get(f"/api/processamentos/{nota['id']}").json()['status'] == 'revisao_necessaria'
-        assert cliente.post('/api/upload', files={'arquivo':('copia.xml', XML)}).json()['duplicado']
-        assert cliente.get('/api/notas/inexistente').status_code == 404
+        assert nota['dados']['tipo'] == 'nfe'
+        assert nota['status'] in ('sucesso', 'revisao_necessaria')
+        assert resposta.headers['cache-control'] == 'no-store'
+        assert not list(tmp_path.iterdir())
+        assert cliente.get('/api/notas').status_code == 404
+        assert cliente.get(f"/api/notas/{nota['id']}/arquivo").status_code == 404
+        assert cliente.delete(f"/api/notas/{nota['id']}").status_code == 404
         assert cliente.get('/docs').status_code == 200
-        assert cliente.get('/api/notas?tipo=outro').status_code == 422
 
 
-def test_upload_invalido(tmp_path, monkeypatch):
+def test_upload_pdf_real_retorna_dados_sem_persistencia(tmp_path):
+    conteudo = (FIXTURES / 'danfe_teste.pdf').read_bytes()
+    resposta = enviar(TestClient(criar_app(tmp_path)), 'danfe_teste.pdf', conteudo, 'application/pdf')
+    assert resposta.status_code == 200
+    assert resposta.json()['dados']['tipo'] == 'nfe'
+    assert resposta.json()['status'] != 'erro'
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.ocr_real
+@pytest.mark.skipif(os.getenv('TESTAR_OCR_REAL') != '1', reason='OCR real requer Tesseract e idioma por')
+def test_upload_imagem_real_com_ocr_sem_persistencia(tmp_path, documento_ficticio):
+    caminho = documento_ficticio('jpg')
+    temporarios = tmp_path / 'temporarios'
+    temporarios.mkdir()
+    resposta = enviar(TestClient(criar_app(temporarios)), caminho.name,
+                      caminho.read_bytes(), 'image/jpeg')
+    assert resposta.status_code == 200
+    assert resposta.json()['status'] != 'erro'
+    assert resposta.json()['dados']['tipo'] == 'nfse'
+    assert resposta.json()['dados']['metadados']['ocr_utilizado'] is True
+    assert not list(temporarios.iterdir())
+
+
+def test_upload_pdf_e_imagem_usam_arquivo_temporario_e_apagam_em_erro(tmp_path, monkeypatch):
+    caminhos = []
+
+    def processar(caminho):
+        caminhos.append(Path(caminho))
+        assert Path(caminho).is_file()
+        raise ValueError('conteudo fiscal simulado')
+
+    monkeypatch.setattr('api.processar_documento', processar)
     cliente = TestClient(criar_app(tmp_path))
-    assert cliente.post('/api/upload', files={'arquivo':('nota.exe', b'abc')}).status_code == 415
-    assert cliente.post('/api/upload', files={'arquivo':('nota.pdf', b'abc')}).status_code == 415
-    assert cliente.post('/api/upload', files={'arquivo':('nota.xml', b'')}).status_code == 400
+    for nome, conteudo, tipo in (
+        ('nota.pdf', b'%PDF-1.4\nconteudo', 'application/pdf'),
+        ('nota.jpg', b'\xff\xd8imagem', 'image/jpeg'),
+        ('nota.png', b'\x89PNG\r\n\x1a\nimagem', 'image/png'),
+    ):
+        resposta = enviar(cliente, nome, conteudo, tipo)
+        assert resposta.status_code == 200
+        assert resposta.json()['status'] == 'erro'
+        assert not list(tmp_path.iterdir())
+    assert len(caminhos) == 3
+    assert all(not caminho.exists() for caminho in caminhos)
+
+
+def test_api_nao_compartilha_resultados_entre_sessoes(tmp_path):
+    app = criar_app(tmp_path)
+    with TestClient(app) as primeira, TestClient(app) as segunda:
+        nota = enviar(primeira).json()
+        assert nota['dados']['tipo'] == 'nfe'
+        for cliente in (primeira, segunda):
+            assert cliente.get('/api/notas').status_code == 404
+            assert cliente.get(f"/api/notas/{nota['id']}").status_code == 404
+        assert not list(tmp_path.iterdir())
+
+
+def test_validacao_de_extensao_mime_assinatura_tamanho_e_xml(tmp_path, monkeypatch):
+    cliente = TestClient(criar_app(tmp_path))
+    casos = (
+        ('nota.exe', b'abc', 'application/octet-stream', 415),
+        ('nota.pdf', b'abc', 'application/pdf', 415),
+        ('nota.jpg', b'%PDF-1.4', 'image/jpeg', 415),
+        ('nota.xml', b'', 'application/xml', 400),
+        ('nota.xml', b'abc', 'application/xml', 415),
+        ('nota.xml', b'<!DOCTYPE a><a/>', 'application/xml', 400),
+        ('nota.xml', XML, 'image/png', 415),
+    )
+    for nome, conteudo, tipo, status in casos:
+        assert enviar(cliente, nome, conteudo, tipo).status_code == status
     monkeypatch.setattr('api.MAX_UPLOAD', 5)
-    assert cliente.post('/api/upload', files={'arquivo':('nota.xml', XML)}).status_code == 413
+    assert enviar(cliente).status_code == 413
+    assert not list(tmp_path.iterdir())
 
 
-def test_api_registra_xml_corrompido_e_rejeita_entidades(tmp_path):
-    cliente = TestClient(criar_app(tmp_path))
-    resposta = cliente.post('/api/upload', files={'arquivo':('ruim.xml', b'<NFe')})
+def test_limite_de_requisicoes_e_ip_nao_confiado(tmp_path):
+    cliente = TestClient(criar_app(tmp_path, requisicoes_por_minuto=1))
+    assert enviar(cliente).status_code == 200
+    resposta = cliente.post('/api/upload', headers={'X-Forwarded-For': 'outro-ip'},
+                            files={'arquivo': ('nota.xml', XML, 'application/xml')})
+    assert resposta.status_code == 429
+    assert resposta.headers['retry-after'] == '60'
+    assert not list(tmp_path.iterdir())
+
+
+def test_falha_no_processamento_nao_registra_dados_fiscais(tmp_path, monkeypatch, caplog):
+    def falhar(_caminho):
+        raise RuntimeError('CNPJ 12345678901234 e chave secreta')
+
+    monkeypatch.setattr('api.processar_documento', falhar)
+    resposta = enviar(TestClient(criar_app(tmp_path)))
     assert resposta.status_code == 200
     assert resposta.json()['status'] == 'erro'
-    assert cliente.get('/api/notas').json()[0]['erro']
-    assert cliente.post('/api/upload', files={'arquivo':('entidade.xml', b'<!DOCTYPE a><a/>')}).status_code == 400
-
-
-def test_excluir_nota_remove_exportacoes_e_permite_reenvio(tmp_path):
-    cliente = TestClient(criar_app(tmp_path))
-    nota = cliente.post('/api/upload', files={'arquivo': ('nota.xml', XML)}).json()
-    identificador = nota['id']
-    assert cliente.delete(f'/api/notas/{identificador}').json() == {'excluida': True}
-    assert cliente.get('/api/notas').json() == []
-    assert cliente.get(f'/api/notas/{identificador}').status_code == 404
-    assert cliente.get(f'/api/processamentos/{identificador}').status_code == 404
-    assert not (tmp_path / 'resultados' / 'registros' / f'{identificador}.json').exists()
-    assert identificador not in (tmp_path / 'resultados' / 'notas.csv').read_text(encoding='utf-8-sig')
-    assert list((tmp_path / 'revisao').glob('*.xml'))  # original preservado
-    assert cliente.delete(f'/api/notas/{identificador}').status_code == 404
-    reenvio = cliente.post('/api/upload', files={'arquivo': ('nota.xml', XML)}).json()
-    assert not reenvio['duplicado']
-    assert len(cliente.get('/api/notas').json()) == 1
-
-
-def test_visualizacao_original_xml_e_exclusao(tmp_path):
-    cliente = TestClient(criar_app(tmp_path))
-    nota = cliente.post('/api/upload', files={'arquivo': ('nota.xml', XML)}).json()
-    resposta = cliente.get(f"/api/notas/{nota['id']}/arquivo")
-    assert resposta.status_code == 200
-    assert resposta.content == XML
-    assert resposta.headers['content-type'].startswith('text/plain')
-    assert resposta.headers['cache-control'] == 'private, no-store'
-    assert resposta.headers['x-content-type-options'] == 'nosniff'
-    assert cliente.get('/api/notas/../../arquivo').status_code == 404
-    assert cliente.delete(f"/api/notas/{nota['id']}").status_code == 200
-    assert cliente.get(f"/api/notas/{nota['id']}/arquivo").status_code == 404
-
-
-def test_visualizacao_original_imagem_e_pdf(tmp_path):
-    cliente = TestClient(criar_app(tmp_path))
-    for extensao, tipo, conteudo in (('jpg', 'image/jpeg', b'\xff\xd8foto'),
-                                     ('pdf', 'application/pdf', b'%PDF-1.4\n')):
-        identificador = hashlib.sha256(conteudo).hexdigest()
-        Banco(tmp_path / 'notas.sqlite3').salvar({
-            'id': identificador, 'origem': f'nota.{extensao}', 'status': 'erro',
-            'dados': None, 'erro': 'teste', 'processado_em': '2026-10-17T00:00:00Z'})
-        pasta = tmp_path / 'erros'
-        pasta.mkdir(exist_ok=True)
-        (pasta / f'{identificador}.{extensao}').write_bytes(conteudo)
-        resposta = cliente.get(f'/api/notas/{identificador}/arquivo')
-        assert resposta.status_code == 200
-        assert resposta.headers['content-type'].startswith(tipo)
-        assert resposta.content == conteudo
+    assert '12345678901234' not in resposta.text
+    assert '12345678901234' not in caplog.text
+    assert not list(tmp_path.iterdir())

@@ -1,12 +1,12 @@
 # Automação de notas fiscais
 
-Extração local de **NF-e e NFS-e** em XML, PDF, PNG e JPEG, com organização em JSON, CSV e SQLite. API FastAPI e interface React + TypeScript + Vite. IA opcional apenas para extrações incompletas e mediante autorização explícita.
+Extração de **NF-e e NFS-e** em XML, PDF, PNG e JPEG. Na aplicação web, a API FastAPI processa cada upload em um diretório temporário e devolve JSON; o React mantém lista, prévias, busca, filtros e exportações JSON/CSV **somente na memória da aba**. O SQLite permanece como recurso opcional do processamento em lote local (`main.py`), sem participação na API pública. IA opcional apenas para extrações incompletas e mediante autorização explícita.
 
 O painel usa tema escuro com cantos retos. As capturas em `docs/` mostram versões anteriores da interface e servem apenas como histórico do projeto.
 
 ## Instalação
 
-Ambiente verificado: Windows, Python 3.14, Node.js 24 e Tesseract com o idioma `por`. Use Python 3.12+ e Node.js 22.12+; outras versões/sistemas não foram verificados nesta entrega.
+Ambiente verificado: Windows, Python 3.14, Node.js 24 e Tesseract com o idioma `por`. Use Python 3.12+ e Node.js 22.12+; outras versões/sistemas não foram verificados nesta entrega. A mudança para processamento temporário não exige dependências novas: o SQLite já é parte da biblioteca padrão e permanece apenas no lote local.
 
 Na raiz do projeto, no PowerShell:
 
@@ -16,7 +16,7 @@ python -m venv .venv
 npm --prefix frontend ci
 ```
 
-Para executar apenas o backend, `requirements.txt` é suficiente. SQLite faz parte do Python. Não é necessário instalar servidor de banco, SDK de IA ou bibliotecas de interface adicionais.
+Para executar apenas o backend, `requirements.txt` é suficiente. A aplicação web não usa banco de dados. SQLite faz parte do Python e é usado somente pelo modo de lote local. Não é necessário instalar servidor de banco nem SDK de IA.
 
 ### Tesseract
 
@@ -47,7 +47,9 @@ npm --prefix frontend run dev
 
 Abra [a interface](http://127.0.0.1:5173) e [o Swagger](http://127.0.0.1:8000/docs). O Vite encaminha `/api` ao backend local. Faça upload de um ou mais arquivos ou use drag & drop. Pesquise por CNPJ/número, filtre NF-e/NFS-e e abra **Ver detalhes** para comparar os dados extraídos com o arquivo original: foto, PDF ou XML.
 
-A API é síncrona: o upload retorna o status final. A interface indica processamento enquanto aguarda a resposta. Use uma instância do backend, com um worker; esta versão é uma ferramenta local, sem autenticação ou fila distribuída. Não execute lote e API simultaneamente sobre a mesma pasta de dados: SQLite protege as inserções, mas as exportações em arquivo não têm coordenação entre processos.
+A API é síncrona: `POST /api/upload` retorna o status final e os dados estruturados. O backend apaga o arquivo temporário ao concluir, inclusive após erro. A interface conserva os resultados e arquivos originais apenas em memória para prévia, busca, filtro, exclusão e exportação. Recarregar ou fechar a aba descarta tudo; exporte antes de sair. Cada aba mantém seu próprio estado e não existe rota pública para listar, consultar ou baixar resultados de outras pessoas. A API não usa `localStorage`, `sessionStorage`, SQLite ou as pastas operacionais do lote. O navegador pode fazer cache de recursos estáticos, mas respostas `/api/` recebem `Cache-Control: no-store`.
+
+Para publicar a demonstração, sirva frontend e backend sob a mesma origem e TLS. Não publique `entrada/`, `resultados/`, `processados/`, `revisao/`, `erros/`, `duplicados/`, `uploads/` nem `notas.sqlite3` como conteúdo estático. Configure o proxy para limitar também o tamanho do corpo HTTP; a validação da API lê até 20 MB + 1 byte do arquivo. O limite de requisições da aplicação é básico, por IP e por processo; em implantação com múltiplos workers ou atrás de proxy, aplique limites também no proxy. Não há login nem histórico compartilhado.
 
 Para gerar e verificar o build:
 
@@ -56,7 +58,7 @@ npm --prefix frontend run build
 npm --prefix frontend run preview
 ```
 
-O preview também requer a API na porta 8000. A pasta `frontend/dist/` não contém backend e não deve ser publicada isoladamente esperando processamento fiscal.
+O preview também requer a API na porta 8000. Para usar outra porta em desenvolvimento, defina `API_PROXY_TARGET` no terminal do Vite antes de iniciá-lo. A pasta `frontend/dist/` não contém backend e não deve ser publicada isoladamente esperando processamento fiscal.
 
 ## Processamento em lote
 
@@ -73,7 +75,7 @@ $env:DADOS_DIR = 'C:/dados/notas-demo'
 .\.venv\Scripts\python.exe main.py
 ```
 
-Configure a mesma variável no terminal da API se quiser compartilhar esse banco. Por padrão, o diretório é a raiz do projeto.
+`DADOS_DIR` é usado somente pelo lote local. A API pública ignora essa variável. Por padrão, o lote usa a raiz do projeto.
 
 | Destino | Conteúdo |
 | --- | --- |
@@ -106,7 +108,7 @@ O gerador sobrescreve somente os nomes de exemplo conhecidos no destino indicado
 
 ```mermaid
 flowchart TD
-    A[entrada ou upload React] --> B[Lote / FastAPI]
+    A[Upload React] --> B[FastAPI: validação e arquivo temporário]
     B --> C[Pipeline compartilhado]
     C --> D{Formato}
     D -->|XML| E[Parser seguro + extratores XML]
@@ -120,29 +122,28 @@ flowchart TD
     I --> J[Avaliação por regras]
     J -->|Incompleto e envio autorizado| K[IA: JSON e evidência literal]
     K --> I2[Revalidação e revisão humana]
-    J --> L[SQLite + JSON + CSV]
+    J --> L[Resposta JSON sem persistência]
     I2 --> L
-    L --> M[Sucesso / revisão / erro]
-    M --> N[API de consulta e interface]
+    L --> M[React: memória da aba]
+    M --> N[Prévia, busca, filtros e exportação local]
 ```
 
 - `extratores/`: regras de NF-e/NFS-e em XML e texto de PDFs/imagens; reaproveitadas do projeto original.
 - `processamento/leitor.py` e `ocr.py`: leitura por página e OCR com `--psm 3`, renderização de PDF a 300 DPI e pré-processamento condicional.
 - `normalizador.py`, `validador.py`, `avaliador.py`: datas/valores/identificadores, dígitos verificadores e diagnóstico.
 - `pipeline.py`: coordena extração local, normalização, IA opcional e reavaliação; não move arquivos.
-- `ia.py`: uma chamada opcional à Responses API, JSON Schema, evidências e métricas.
-- `lote.py`: tratamento por arquivo, organização das pastas, logs e exportações.
-- `banco.py`: persistência SQLite transacional e consultas parametrizadas, sem ORM.
-- `api.py`: uploads e consultas; reutiliza o mesmo processamento do lote.
-- `frontend/`: interface responsiva, sem biblioteca visual adicional.
+- `ia.py`: uma chamada opcional ao Gemini ou à Responses API da OpenAI, com esquema JSON, evidências e métricas.
+- `lote.py` e `banco.py`: processamento em lote e persistência SQLite **opcionais para execução local**; nunca importados por `api.py`.
+- `api.py`: valida uploads, limita requisições, chama o pipeline e devolve o resultado sem salvar dados.
+- `frontend/`: interface responsiva e estado temporário por aba, sem biblioteca visual adicional.
 
 ### Mapa dos arquivos
 
-Esta é a ordem sugerida de leitura para estudar o projeto: `api.py` ou `main.py` → `processamento/pipeline.py` → leitores/extratores → normalização/avaliação → persistência. O frontend consulta a mesma API usada pelo upload.
+Esta é a ordem sugerida de leitura para estudar o projeto web: `frontend/src/main.tsx` → `api.py` → `processamento/pipeline.py` → leitores/extratores → normalização/avaliação. Para estudar o modo local com persistência, siga `main.py` → `processamento/lote.py` → `processamento/banco.py`.
 
 | Arquivo | Responsabilidade |
 | --- | --- |
-| `api.py` | Cria o FastAPI; valida uploads, lista, consulta, serve a prévia do original e exclui registros. |
+| `api.py` | Cria o FastAPI; valida upload, tipo MIME/assinatura/tamanho, limita requisições, processa em diretório temporário e devolve JSON. |
 | `main.py` | Entrada do processamento em lote e funções de compatibilidade para um arquivo. |
 | `gerar_demo.py` | Gera exemplos fictícios para estudo, sem dados reais. |
 | `processamento/pipeline.py` | Coordena leitura, extração, normalização, avaliação e eventual tentativa com IA. Define formatos e versão do extrator. |
@@ -161,10 +162,10 @@ Esta é a ordem sugerida de leitura para estudar o projeto: `api.py` ou `main.py
 | `extratores/nfse_pdf.py` | Extrai campos de NFS-e em texto de PDF ou OCR. |
 | `extratores/nfe_xml.py` | Extrai NF-e do XML do Portal Fiscal. |
 | `extratores/nfse_xml.py` | Extrai NFS-e de XML ABRASF ou municipal paulistano. |
-| `frontend/src/main.tsx` | Tela React: upload, lista, filtros, detalhes e exclusão. |
+| `frontend/src/main.tsx` | Tela React: upload, lista em memória, filtros, detalhes/prévia local, exclusão e exportações JSON/CSV. |
 | `frontend/src/style.css` | Layout responsivo, cores do tema escuro e estados visuais. |
 | `frontend/index.html` | Documento HTML inicial, metadados e ponto de montagem do React. |
-| `frontend/vite.config.ts` | Configura o proxy `/api` do Vite para o FastAPI local. |
+| `frontend/vite.config.ts` | Configura o proxy `/api` do Vite para o FastAPI local; aceita `API_PROXY_TARGET`. |
 | `frontend/tsconfig.json` | Regras de compilação e checagem do TypeScript. |
 | `frontend/src/vite-env.d.ts` | Tipos do ambiente Vite usados pelo frontend. |
 | `frontend/package.json` | Scripts de desenvolvimento/build e dependências declaradas. |
@@ -177,7 +178,7 @@ Esta é a ordem sugerida de leitura para estudar o projeto: `api.py` ou `main.py
 | `testes/__init__.py` | Torna os utilitários de teste importáveis como pacote. |
 | `testes/conftest.py` | Fixtures comuns; bloqueia chamadas externas de IA durante a suíte. |
 | `testes/dados_ficticios.py` | Cria os documentos sintéticos usados no gerador e nos testes. |
-| `testes/test_api.py` | Exercita validação do upload, consultas e exclusão HTTP. |
+| `testes/test_api.py` | Exercita validação, limite, isolamento e limpeza da API temporária. |
 | `testes/test_banco.py` | Exercita persistência SQLite e identificação de duplicatas. |
 | `testes/test_ia.py` | Verifica autorizações, resposta estruturada e evidências sem chamada externa real. |
 | `testes/test_avaliador.py` | Verifica completude, validade e necessidade de revisão. |
@@ -210,9 +211,9 @@ Esta é a ordem sugerida de leitura para estudar o projeto: `api.py` ou `main.py
 | `docs/interface.jpg` | Captura histórica da interface em desktop. |
 | `docs/interface-mobile.jpg` | Captura histórica da interface estreita. |
 
-`entrada/`, `processados/`, `revisao/`, `erros/`, `duplicados/`, `uploads/`, `resultados/`, `notas.sqlite3`, `.venv/`, `frontend/node_modules/` e `frontend/dist/` são dados ou artefatos gerados localmente; não são código-fonte do projeto.
+`entrada/`, `processados/`, `revisao/`, `erros/`, `duplicados/`, `resultados/` e `notas.sqlite3` pertencem exclusivamente ao lote local. `uploads/` é legado e não é usado pela API pública. `.venv/`, `frontend/node_modules/` e `frontend/dist/` são artefatos de instalação/build.
 
-O formato original (`tipo`, `numero_nota`, `emitente`, `destinatario`, datas e `valor_total`) foi preservado. Foram acrescentados campos de líquido/ISS, `vencimentos`, validações, avaliação e metadados. `valor_total` representa **valor bruto**. `data_vencimento` mantém o primeiro vencimento encontrado; `vencimentos` preserva todas as datas identificadas. Ausência é `null`, nunca um valor inventado. Os registros do lote/API envolvem esses dados na propriedade `dados` e acrescentam status e origem.
+O formato original (`tipo`, `numero_nota`, `emitente`, `destinatario`, datas e `valor_total`) foi preservado. Foram acrescentados campos de líquido/ISS, `vencimentos`, validações, avaliação e metadados. `valor_total` representa **valor bruto**. `data_vencimento` mantém o primeiro vencimento encontrado; `vencimentos` preserva todas as datas identificadas. Ausência é `null`, nunca um valor inventado. A resposta da API e os registros do lote envolvem esses dados na propriedade `dados` e acrescentam status e origem.
 
 ### Regras de qualidade
 
@@ -251,11 +252,11 @@ Para continuar usando OpenAI, defina `IA_PROVEDOR=openai`, `OPENAI_API_KEY` e um
 3. `IA_HABILITADA=1` **e** `IA_ENVIO_AUTORIZADO=1`, além da chave do provedor selecionado (`GEMINI_API_KEY` ou `OPENAI_API_KEY`) e de um modelo válido. Gemini usa `gemini-2.5-flash` se `IA_MODELO` não estiver definido.
 4. O texto contém linhas com contexto fiscal suficientes para montar o trecho enviado.
 
-Um arquivo repetido com resultado da versão atual retorna do cache antes dessa etapa. Um identificador apenas inválido, sem campo obrigatório ausente, solicita revisão sem chamar IA. Se qualquer condição falhar, `metadados.ia.utilizada` fica `false` e não há requisição externa.
+Um identificador apenas inválido, sem campo obrigatório ausente, solicita revisão sem chamar IA. Se qualquer condição falhar, `metadados.ia.utilizada` fica `false` e não há requisição externa. A API pública não tem cache de notas: cada novo envio é processado novamente e pode gerar uma nova chamada de IA quando configurada. O cache por duplicidade existe apenas no lote local.
 
 Só habilite as opções depois de autorizar o envio dos dados envolvidos e verificar o tratamento adequado das informações. A autorização por ambiente se aplica aos documentos processados nessa execução. `IA_ENVIO_IMAGEM=1` é uma autorização separada para enviar fotos JPEG/PNG inteiras, além do texto OCR, apenas quando a extração local estiver incompleta. Os testes automatizados usam respostas simuladas, sem envio externo.
 
-A integração Gemini usa [`generateContent` com saída JSON estruturada](https://ai.google.dev/gemini-api/docs/migrate-to-interactions) por `generationConfig.responseMimeType` e `responseJsonSchema`; a integração OpenAI usa a Responses API. Ambas passam pelo mesmo filtro local de evidências e validações. Após trocar o provedor ou atualizar a integração, reenvie uma nota em revisão para testá-la: registros concluídos e duplicatas da versão atual podem sair do cache sem chamar a IA. Consulte `metadados.ia.provedor`, `chamadas`, `erro` e `campos_aceitos` nos detalhes.
+A integração Gemini usa [`generateContent` com saída JSON estruturada](https://ai.google.dev/gemini-api/docs/migrate-to-interactions) por `generationConfig.responseMimeType` e `responseJsonSchema`; a integração OpenAI usa a Responses API. Ambas passam pelo mesmo filtro local de evidências e validações. Após trocar o provedor ou atualizar a integração, reenvie uma nota incompleta para testá-la. Consulte `metadados.ia.provedor`, `chamadas`, `erro` e `campos_aceitos` nos detalhes.
 
 Para economizar, XML/texto/OCR e regex têm prioridade. O fallback recebe somente campos ausentes e trechos fiscais (até 12 mil caracteres), faz no máximo uma chamada por processamento e limita a saída a 1.800 tokens. Esse trecho pode conter nomes, identificadores e valores presentes no documento. Sem `IA_ENVIO_IMAGEM=1`, não envia imagens. Com ela, envia uma cópia JPEG reduzida da foto inteira (até 2048 px), que pode consumir tokens adicionais não cobertos pela estimativa simples de caracteres. Documentos completos, não fiscais ou sem texto não acionam a IA. Extrações XML não têm fallback externo nesta versão.
 
@@ -268,16 +269,11 @@ Os metadados registram provedor, chamadas, uso de IA, campos aceitos, erro, esti
 | Método | Rota | Uso |
 | --- | --- | --- |
 | POST | `/api/upload` | Multipart com campo `arquivo`; limite de 20 MB |
-| GET | `/api/notas` | Lista; `tipo`, `busca`, `limite` (1–500), `deslocamento` |
-| GET | `/api/notas/{id}` | Registro completo |
-| GET | `/api/notas/{id}/arquivo` | Arquivo original da nota cadastrada, para prévia de JPG/PNG, PDF e XML |
-| DELETE | `/api/notas/{id}` | Exclui registro, aliases e exportação JSON; atualiza CSV e preserva arquivos originais |
-| GET | `/api/processamentos/{id}` | Status final, erro e horário |
 | GET | `/docs` | Swagger automático |
 
-Valida extensão, tamanho, arquivo vazio e assinatura de PDF/imagem. A rota rejeita declarações DTD/entidades identificadas no conteúdo; o parser também impede expansão de entidades. MIME fornecido pelo cliente não é usado como prova de formato. Nome de upload não pode escolher caminhos fora da pasta temporária. Um upload aceito que falha na extração retorna HTTP 200 com `status=erro`; erros de validação do upload usam HTTP 400, 413 ou 415. Não há processamento assíncrono em segundo plano.
+Valida extensão, MIME declarado, tamanho, arquivo vazio, assinatura de PDF/imagem e início de XML. O MIME do cliente não é usado como prova única de formato. A rota rejeita declarações DTD/entidades identificadas no conteúdo; o parser também impede expansão de entidades. O nome do upload não escolhe o caminho temporário. Um upload aceito que falha na extração retorna HTTP 200 com `status=erro`; erros de validação usam HTTP 400, 413 ou 415. O limite básico usa `UPLOADS_POR_MINUTO` (padrão 10 por IP/processo) e `UPLOADS_SIMULTANEOS` (padrão 2 por processo); excesso retorna HTTP 429. Arquivos temporários do processamento são apagados no sucesso e no erro. Não há processamento assíncrono em segundo plano.
 
-A interface oferece exclusão com confirmação, filtros de status, busca por emitente/CNPJ/número/arquivo, ordenação e resumo financeiro das notas concluídas. Nos detalhes, o original aparece ao lado dos dados em telas largas e acima deles em telas estreitas. A exclusão permite reenviar o documento para criar novamente o registro; depois dela a rota da prévia não serve mais o arquivo preservado.
+A interface oferece exclusão com confirmação, filtros de status, busca por emitente/CNPJ/número/arquivo, ordenação e resumo financeiro das notas concluídas. Nos detalhes, o arquivo mantido na memória da aba aparece ao lado dos dados em telas largas e acima deles em telas estreitas. Exportar JSON ou CSV cria um download no próprio navegador, sem chamar a API. O CSV neutraliza células que poderiam ser interpretadas como fórmulas em planilhas. Após excluir, a prévia desaparece e é possível reenviar o documento.
 
 ## Testes
 
@@ -290,7 +286,7 @@ $env:TESTAR_OCR_REAL = '1'
 npm --prefix frontend run build
 ```
 
-Os testes automatizados cobrem o disparo do Gemini a partir do pipeline, o formato da requisição, tratamento de erro e as rotas de prévia, sem enviar notas a um serviço externo. O registro local mais recente de uma chamada Gemini retornou `HTTP 400 (INVALID_ARGUMENT)` antes da correção do formato JSON. A integração foi ajustada; a confirmação de uma resposta real bem-sucedida exige reiniciar o backend com a chave no ambiente e reenviar uma nota incompleta. Os PDFs, XML e `malaguNFE2.jpg` fornecidos anteriormente passaram na extração local; a foto antiga `malaguNFE.jpg` ainda requer revisão da chave de acesso, pois o OCR não a reproduz com segurança.
+Os testes automatizados cobrem extração local, disparo simulado do Gemini, upload da API, limpeza do diretório temporário, isolamento das rotas e limite de requisições, sem enviar notas a um serviço externo. Para confirmar uma resposta real do Gemini, inicie o backend com a chave e as autorizações no ambiente e envie uma nota incompleta. Os PDFs, XML e `malaguNFE2.jpg` fornecidos anteriormente passaram na extração local; a foto antiga `malaguNFE.jpg` ainda requer revisão da chave de acesso, pois o OCR não a reproduz com segurança.
 
 Para testar a leitura com cobertura útil, separe arquivos de **uma nota por documento**, com os valores corretos conhecidos para comparação:
 
@@ -303,23 +299,23 @@ Para testar a leitura com cobertura útil, separe arquivos de **uma nota por doc
 | Fotos inclinadas, com sombra/dobra e com rotação EXIF | Robustez do pré-processamento e limites de leitura |
 | NFS-e de municípios ou provedores diferentes | Adaptação a layouts distintos |
 | Nota com campo essencial ausente ou ilegível | Disparo da IA, evidência, revisão e preservação dos demais campos |
-| Arquivo duplicado e PDF/imagem inválido | Cache, tratamento de erro e ausência de dados inventados |
+| Arquivo repetido e PDF/imagem inválido | Reprocessamento independente, tratamento de erro e ausência de dados inventados |
 
 Confira especialmente número, CNPJ/CPF, data de emissão, chave NF-e, valor bruto, líquido, ISS, vencimentos e o documento mostrado na prévia. Documentos de teste com dados anonimizados precisam manter os dígitos verificadores válidos quando a validação desses campos fizer parte do teste.
 
-No navegador foram verificados upload de XML fictício, listagem, detalhe, pesquisa, filtro e estados de revisão; layouts de 390 px e desktop também foram inspecionados. [Captura estreita](docs/interface-mobile.jpg). Não foi realizada validação em celular físico.
+As capturas em `docs/` são históricas e podem divergir da interface atual. Não foi realizada validação em celular físico.
 
 ## Limitações conhecidas
 
 - Layouts municipais de NFS-e variam: o parser XML cobre o namespace ABRASF usado nos exemplos, o retorno municipal paulistano (`RetornoConsulta/NFe`, com ou sem namespace) e o de NF-e o namespace do Portal Fiscal. Padrões nacionais/municipais diferentes podem precisar de novos adaptadores.
 - PDFs com texto são lidos preservando as colunas. Cabeçalhos e linhas de valores são associados por coluna, e a seção de totais tem prioridade sobre itens individuais. RPS não substitui número da NFS-e. O formato municipal denominado `NFe` é classificado como NFS-e por sua estrutura.
 - PDF/imagem depende de rótulos e contexto textual reconhecíveis. Tabelas com ordem de leitura ambígua, fotos inclinadas, baixa nitidez e texto manuscrito podem gerar campos ausentes. OCR não garante recuperação de imagens ruins. Uma foto reconhecida com chave ausente permanece para revisão, preservando os demais campos extraídos.
-- O leitor considera texto útil a partir de 20 caracteres por página; cabeçalhos em páginas com corpo escaneado podem impedir OCR automático. O OCR corrige orientação EXIF, amplia imagens pequenas e relê regiões de total/chave e das células de emitente/destinatário/data do DANFE localizadas pelo cabeçalho. Em capturas compactas de NF-e, se o OCR ler "N F-e" e perder "DANFE", o leitor relê o cabeçalho e combina uma segunda segmentação antes de classificar o documento. Para NFS-e com cabeçalho no canto superior, relê o número e a data; tabelas de nove montantes com rótulos reconhecidos são mapeadas por coluna. Identificadores só são aceitos na releitura do DANFE se passarem pela validação matemática; valores conflitantes não são aceitos e não há correção automática de dígitos da chave. A versão 8 do extrator reavalia notas anteriores em erro/revisão quando reenviadas; se a chave recuperada apontar para uma nota já cadastrada, o erro antigo é consolidado com ela.
+- O leitor considera texto útil a partir de 20 caracteres por página; cabeçalhos em páginas com corpo escaneado podem impedir OCR automático. O OCR corrige orientação EXIF, amplia imagens pequenas e relê regiões de total/chave e das células de emitente/destinatário/data do DANFE localizadas pelo cabeçalho. Em capturas compactas de NF-e, se o OCR ler "N F-e" e perder "DANFE", o leitor relê o cabeçalho e combina uma segunda segmentação antes de classificar o documento. Para NFS-e com cabeçalho no canto superior, relê o número e a data; tabelas de nove montantes com rótulos reconhecidos são mapeadas por coluna. Identificadores só são aceitos na releitura do DANFE se passarem pela validação matemática; valores conflitantes não são aceitos e não há correção automática de dígitos da chave. No lote local, a versão 8 do extrator reavalia notas anteriores em erro/revisão quando reenviadas; se a chave recuperada apontar para uma nota já cadastrada, o erro antigo é consolidado com ela.
 - Uma nota por documento. Não há separação de arquivos com várias notas nem suporte a XML compactado/ZIP, assinatura digital ou consulta à SEFAZ/prefeituras.
 - Somente CPF/CNPJ numéricos. Identificadores alfanuméricos e regimes tributários específicos não são tratados.
 - ISS, base, alíquota e retenção são extraídos quando o layout expõe rótulos suportados. Não há cálculo/reconciliação tributária completa.
-- Sem chave confiável, cópias em formatos diferentes podem não ser reconhecidas como duplicadas. Não há edição/aprovação manual dos campos pela interface.
-- A API/processamento são locais e síncronos. O limite de upload não substitui limites de infraestrutura para exposição pública. Não há autenticação ou garantia de recuperação automática de exportações após falhas de disco.
+- No lote local, cópias em formatos diferentes podem não ser reconhecidas como duplicadas sem chave confiável. A interface pública não faz deduplicação nem permite editar/aprovar manualmente os campos.
+- A API é síncrona. Seu limite de upload e de requisições não substitui limites de infraestrutura para exposição pública. Não há autenticação, histórico no servidor ou recuperação dos dados da aba após recarregar. Downloads JSON/CSV ficam no dispositivo do usuário e passam a ser responsabilidade dele.
 - O limite de 12 mil caracteres pode deixar evidências de IA de fora. A integração externa foi testada com mocks, não com chamada paga real.
 
 ## Organização para GitHub
