@@ -39,8 +39,6 @@ def avaliar_extracao(dados):
         'inconsistencias': suspeitas,
         'completude': completude,
         'validade': validade,
-        'confianca_estimada': 'baixa' if revisar else 'alta',
-        'criterio_confianca': 'Heurística: alta somente com campos obrigatórios presentes e sem inconsistências detectadas; não é probabilidade.',
         'solicitar_segunda_tentativa': bool(ausentes),
         'elegivel_ia': bool(ausentes) and tipo in {'nfe', 'nfse'},
     }

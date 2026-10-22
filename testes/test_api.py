@@ -41,6 +41,21 @@ def test_upload_pdf_real_retorna_dados_sem_persistencia(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
+def test_upload_conclui_quando_ia_completa_campos_validos(tmp_path, monkeypatch):
+    def processar(_caminho):
+        return {'tipo': 'nfe', 'avaliacao': {'status_extracao': 'completo',
+                'campos_ausentes': [], 'inconsistencias': []},
+                'metadados': {'ia': {'utilizada': True,
+                                    'campos_aceitos': ['destinatario.cnpj_cpf']}}}
+
+    monkeypatch.setattr('api.processar_documento', processar)
+    resposta = enviar(TestClient(criar_app(tmp_path)))
+    assert resposta.status_code == 200
+    assert resposta.json()['status'] == 'sucesso'
+    assert resposta.json()['dados']['metadados']['ia']['campos_aceitos']
+    assert not list(tmp_path.iterdir())
+
+
 @pytest.mark.ocr_real
 @pytest.mark.skipif(os.getenv('TESTAR_OCR_REAL') != '1', reason='OCR real requer Tesseract e idioma por')
 def test_upload_imagem_real_com_ocr_sem_persistencia(tmp_path, documento_ficticio):

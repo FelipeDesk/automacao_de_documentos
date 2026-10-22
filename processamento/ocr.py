@@ -33,6 +33,35 @@ def configurar_tesseract():
         pytesseract.pytesseract.tesseract_cmd = comando
 
 
+def remover_grade(imagem):
+    """Remove traços longos em uma cópia; mantém o original para reler o cabeçalho."""
+    cinza = ImageOps.grayscale(ImageOps.exif_transpose(imagem))
+    largura, altura = cinza.size
+    origem = cinza.tobytes()
+    destino = bytearray(origem)
+    horizontais = 0
+    for vertical in (False, True):
+        comprimento, faixas = (altura, largura) if vertical else (largura, altura)
+        minimo = max(30, int(altura * .04)) if vertical else max(60, int(largura * .08))
+        for faixa in range(faixas):
+            inicio = None
+            for pos in range(comprimento + 1):
+                indice = pos * largura + faixa if vertical else faixa * largura + pos
+                escuro = pos < comprimento and origem[indice] < 100
+                if escuro and inicio is None:
+                    inicio = pos
+                if not escuro and inicio is not None:
+                    if pos - inicio >= minimo:
+                        horizontais += not vertical
+                        for ponto in range(inicio, pos):
+                            destino[ponto * largura + faixa if vertical else faixa * largura + ponto] = 255
+                    inicio = None
+        # Sem evidência de uma grade, evita processamento adicional em fotos.
+        if not vertical and horizontais < 4:
+            return None
+    return Image.frombytes('L', cinza.size, bytes(destino))
+
+
 def refinar_campos_danfe(imagem, texto):
     """Relê as células do cabeçalho a partir dos rótulos e das linhas do DANFE."""
     dados = pytesseract.image_to_data(imagem, lang=os.getenv('OCR_LANG', 'por'),
@@ -145,6 +174,7 @@ def refinar_cabecalho_nfse(imagem, texto):
 
 def reconhecer(imagem):
     configurar_tesseract()
+    original = imagem
     imagem = preparar_imagem(imagem)
     texto = pytesseract.image_to_string(imagem, lang=os.getenv('OCR_LANG', 'por'), config='--psm 3 -c preserve_interword_spaces=1')
     if 'DANFE' in texto.upper():
@@ -165,6 +195,14 @@ def reconhecer(imagem):
             texto += '\n' + alternativo + '\n' + leitura_cabecalho
     elif 'NFS-E' in texto.upper():
         texto = refinar_cabecalho_nfse(imagem, texto)
+    if 'DANFE' in texto.upper():
+        sem_grade = remover_grade(original)
+        if sem_grade is not None:
+            limpo = pytesseract.image_to_string(preparar_imagem(sem_grade),
+                lang=os.getenv('OCR_LANG', 'por'), config='--psm 3 -c preserve_interword_spaces=1')
+            # A leitura sem bordas recupera valores antes unidos às linhas.
+            # O cabeçalho original ainda fornece número e chave de acesso.
+            texto = limpo + '\n' + texto
     return texto
 
 

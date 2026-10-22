@@ -870,3 +870,8 @@ dialog::backdrop { background: #04070bca; }
 }
 .export-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 @media (max-width: 800px) { .export-actions { justify-content: flex-start; } }
+.app { display: block; }
+main { width: 100%; margin: 0 auto; padding-top: 32px; }
+.heading { gap: 20px; flex-wrap: wrap; margin: 0 0 28px; }
+.heading h1 { margin: 0; font-size: clamp(25px, 3vw, 36px); line-height: 1.2; }
+@media (max-width: 800px) { main { padding-top: 24px; } }

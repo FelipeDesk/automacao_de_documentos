@@ -16,16 +16,17 @@ python -m venv .venv
 npm --prefix frontend ci
 ```
 
+Copie `.env.example` para `.env` na raiz e ajuste as configurações antes de iniciar. O backend lê esse arquivo automaticamente; veja a seção de IA para preencher a chave.
+
 Para executar apenas o backend, `requirements.txt` é suficiente. A aplicação web não usa banco de dados. SQLite faz parte do Python e é usado somente pelo modo de lote local. Não é necessário instalar servidor de banco nem SDK de IA.
 
 ### Tesseract
 
-Instale o Tesseract e os dados de idioma português (`por`), conforme a [documentação de instalação](https://tesseract-ocr.github.io/tessdoc/Installation.html). No Windows, configure o caminho correspondente à sua instalação:
+Instale o Tesseract e os dados de idioma português (`por`), conforme a [documentação de instalação](https://tesseract-ocr.github.io/tessdoc/Installation.html). No Windows, configure no `.env` o caminho correspondente à sua instalação:
 
-```powershell
-$env:TESSERACT_CMD = 'C:/Program Files/Tesseract-OCR/tesseract.exe'
-$env:OCR_LANG = 'por'
-& $env:TESSERACT_CMD --list-langs
+```dotenv
+TESSERACT_CMD=C:/Program Files/Tesseract-OCR/tesseract.exe
+OCR_LANG=por
 ```
 
 No Linux, os pacotes usuais são `tesseract-ocr` e `tesseract-ocr-por`. Se o executável estiver no `PATH`, `TESSERACT_CMD` é dispensável. No Windows, o sistema também procura a instalação em `ProgramFiles/Tesseract-OCR` e `LOCALAPPDATA/Tesseract-OCR`. Sem Tesseract, XML e PDFs com texto continuam funcionando; imagens e páginas escaneadas registram erro de OCR.
@@ -35,7 +36,6 @@ No Linux, os pacotes usuais são `tesseract-ocr` e `tesseract-ocr-por`. Se o exe
 Terminal 1, na raiz:
 
 ```powershell
-$env:TESSERACT_CMD = 'C:/Program Files/Tesseract-OCR/tesseract.exe'
 .\.venv\Scripts\python.exe -m uvicorn api:app --host 127.0.0.1 --port 8000
 ```
 
@@ -68,11 +68,10 @@ Coloque cópias dos documentos em `entrada/` e execute:
 .\.venv\Scripts\python.exe main.py
 ```
 
-As pastas são criadas automaticamente. Defina `DADOS_DIR` para isolar os dados operacionais:
+As pastas são criadas automaticamente. Defina `DADOS_DIR` no `.env` para isolar os dados operacionais:
 
-```powershell
-$env:DADOS_DIR = 'C:/dados/notas-demo'
-.\.venv\Scripts\python.exe main.py
+```dotenv
+DADOS_DIR=C:/dados/notas-demo
 ```
 
 `DADOS_DIR` é usado somente pelo lote local. A API pública ignora essa variável. Por padrão, o lote usa a raiz do projeto.
@@ -80,7 +79,7 @@ $env:DADOS_DIR = 'C:/dados/notas-demo'
 | Destino | Conteúdo |
 | --- | --- |
 | `processados/` | Documentos sem ausências obrigatórias ou inconsistências detectadas |
-| `revisao/` | Extrações incompletas, identificadores inválidos ou campos preenchidos por IA |
+| `revisao/` | Extrações que ainda têm campos essenciais ausentes ou inconsistências após a IA |
 | `erros/` | Arquivos que não puderam ser lidos/classificados/extraídos |
 | `duplicados/` | Cópias adicionais preservadas quando o destino já existe |
 | `resultados/registros/<id>.json` | Resultado por nota, origem, status, erro e horário UTC |
@@ -130,9 +129,10 @@ flowchart TD
 
 - `extratores/`: regras de NF-e/NFS-e em XML e texto de PDFs/imagens; reaproveitadas do projeto original.
 - `processamento/leitor.py` e `ocr.py`: leitura por página e OCR com `--psm 3`, renderização de PDF a 300 DPI e pré-processamento condicional.
+- Em DANFEs com grade, uma cópia sem linhas longas recupera valores ligados às bordas das células. A leitura original continua disponível para número e chave; o arquivo original não é alterado. A extração tolera espaços do OCR dentro de CPF/CNPJ e lê vencimentos na tabela de duplicatas.
 - `normalizador.py`, `validador.py`, `avaliador.py`: datas/valores/identificadores, dígitos verificadores e diagnóstico.
 - `pipeline.py`: coordena extração local, normalização, IA opcional e reavaliação; não move arquivos.
-- `ia.py`: uma chamada opcional ao Gemini ou à Responses API da OpenAI, com esquema JSON, evidências e métricas.
+- `ia.py`: extração opcional pelo Gemini 3.6 Flash com retentativas limitadas, com esquema JSON, evidências e métricas.
 - `lote.py` e `banco.py`: processamento em lote e persistência SQLite **opcionais para execução local**; nunca importados por `api.py`.
 - `api.py`: valida uploads, limita requisições, chama o pipeline e devolve o resultado sem salvar dados.
 - `frontend/`: interface responsiva e estado temporário por aba, sem biblioteca visual adicional.
@@ -221,48 +221,52 @@ Campos obrigatórios comuns: número, CNPJ do emitente e valor bruto. Para NF-e/
 
 - **Completude:** percentual dos campos obrigatórios presentes; valor zero conta como presente.
 - **Validade:** percentual dos identificadores presentes que passam nas verificações matemáticas. Não verifica existência cadastral, autorização fiscal ou assinatura.
-- **Confiança estimada:** alta somente sem ausências e sem inconsistências detectadas; baixa nos demais casos. É uma heurística explícita, não uma probabilidade.
 - Valor negativo, líquido superior ao bruto e identificadores inválidos exigem revisão. Valores não finitos são normalizados para ausência.
 - Campos ausentes habilitam uma segunda tentativa via IA, somente para tipo fiscal já reconhecido e com texto disponível. Apenas identificador inválido não provoca chamada de IA.
 
 ## IA opcional e economia de tokens
 
-O processamento local funciona sem chave. `.env.example` é uma referência de configuração; **não há carregamento automático de `.env`**. Para usar a faixa gratuita do Gemini, crie uma chave no [Google AI Studio](https://aistudio.google.com/app/apikey) e defina estas variáveis **no mesmo terminal em que iniciará o backend**:
+O backend carrega automaticamente o `.env` da raiz ao iniciar pela API (`uvicorn api:app`) ou pelo lote (`main.py`), mesmo quando o diretório de execução é outro. A leitura ocorre antes da configuração dos limites de upload e dos módulos de processamento. Variáveis já definidas no ambiente têm prioridade sobre o arquivo.
+
+Em uma nova instalação, copie `.env.example` para `.env` (sem sobrescrever um arquivo existente):
 
 ```powershell
-$env:IA_PROVEDOR = 'gemini'
-$chaveGemini = Read-Host 'Chave Gemini' -AsSecureString
-$env:GEMINI_API_KEY = [System.Net.NetworkCredential]::new('', $chaveGemini).Password
-$env:IA_MODELO = 'gemini-2.5-flash'
-$env:IA_HABILITADA = '1'
-$env:IA_ENVIO_AUTORIZADO = '1'
-# Opcional: autoriza enviar também a foto inteira quando faltarem campos.
-$env:IA_ENVIO_IMAGEM = '1'
-.\.venv\Scripts\python.exe -m uvicorn api:app --host 127.0.0.1 --port 8000
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-O modelo padrão de Gemini é `gemini-2.5-flash` quando `IA_MODELO` estiver vazio. Defina-o explicitamente ao migrar para evitar que um modelo OpenAI ainda presente no ambiente seja usado. Reinicie o backend após alterar as variáveis **ou atualizar o código**. A chave fica apenas no processo Python; nunca a coloque no frontend, em código versionado nem a envie no chat. O frontend continua usando a mesma API local. O nível gratuito está sujeito às [cotas e condições atuais do Gemini](https://ai.google.dev/gemini-api/docs/pricing); confira-as antes de processar notas reais. Segundo a tabela oficial de preços, o conteúdo do nível gratuito pode ser usado para melhorar os produtos do Google.
+Edite o `.env` uma vez, preenchendo sua chave do [Google AI Studio](https://aistudio.google.com/app/apikey) e habilitando o uso de IA quando desejar:
 
-Para continuar usando OpenAI, defina `IA_PROVEDOR=openai`, `OPENAI_API_KEY` e um `IA_MODELO` compatível com [Structured Outputs na Responses API](https://developers.openai.com/api/docs/guides/structured-outputs). Sem `IA_PROVEDOR`, OpenAI continua sendo o padrão para instalações existentes.
+```dotenv
+GEMINI_API_KEY=sua-chave-aqui
+IA_HABILITADA=1
+IA_ENVIO_AUTORIZADO=1
+IA_ENVIO_IMAGEM=0
+```
+
+O único provedor é Gemini. O modelo principal é [`gemini-3.6-flash`](https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash); após HTTP 503 persistente, o sistema tenta [`gemini-3.5-flash-lite`](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite). Não há seleção de provedor ou modelo por variável. A configuração inicial mantém o processamento local (`IA_HABILITADA=0` e `IA_ENVIO_AUTORIZADO=0`); a chave começa vazia. Para enviar também fotos ao fallback, defina `IA_ENVIO_IMAGEM=1`.
+
+Reinicie o backend após editar o arquivo. Se ainda houver variáveis antigas no PowerShell, abra um novo terminal para usar os valores do `.env`. O `.env` e suas variantes estão protegidos pelo `.gitignore`; apenas `.env.example`, sem credenciais, é versionado. A chave é usada somente pelo backend. Consulte as [condições e preços do Gemini](https://ai.google.dev/gemini-api/docs/pricing) para seu modelo e conta.
 
 **Quando a IA é acionada:** a decisão ocorre em `processamento/pipeline.py` depois da primeira extração local e da avaliação por regras. A chamada acontece apenas quando **todas** estas condições são verdadeiras:
 
 1. O documento foi reconhecido como NF-e ou NFS-e e há texto de PDF ou OCR disponível. XML é extraído localmente e não fornece texto ao fallback.
 2. Falta pelo menos um campo **obrigatório** avaliado por `processamento/avaliador.py`: número, CNPJ do emitente, valor bruto, data de emissão ou documento do destinatário; NF-e exige também a chave. Campos opcionais ausentes, como valor líquido/ISS, não bastam.
-3. `IA_HABILITADA=1` **e** `IA_ENVIO_AUTORIZADO=1`, além da chave do provedor selecionado (`GEMINI_API_KEY` ou `OPENAI_API_KEY`) e de um modelo válido. Gemini usa `gemini-2.5-flash` se `IA_MODELO` não estiver definido.
+3. `IA_HABILITADA=1` **e** `IA_ENVIO_AUTORIZADO=1`, além de `GEMINI_API_KEY` preenchida no `.env` ou no ambiente.
 4. O texto contém linhas com contexto fiscal suficientes para montar o trecho enviado.
 
 Um identificador apenas inválido, sem campo obrigatório ausente, solicita revisão sem chamar IA. Se qualquer condição falhar, `metadados.ia.utilizada` fica `false` e não há requisição externa. A API pública não tem cache de notas: cada novo envio é processado novamente e pode gerar uma nova chamada de IA quando configurada. O cache por duplicidade existe apenas no lote local.
 
 Só habilite as opções depois de autorizar o envio dos dados envolvidos e verificar o tratamento adequado das informações. A autorização por ambiente se aplica aos documentos processados nessa execução. `IA_ENVIO_IMAGEM=1` é uma autorização separada para enviar fotos JPEG/PNG inteiras, além do texto OCR, apenas quando a extração local estiver incompleta. Os testes automatizados usam respostas simuladas, sem envio externo.
 
-A integração Gemini usa [`generateContent` com saída JSON estruturada](https://ai.google.dev/gemini-api/docs/migrate-to-interactions) por `generationConfig.responseMimeType` e `responseJsonSchema`; a integração OpenAI usa a Responses API. Ambas passam pelo mesmo filtro local de evidências e validações. Após trocar o provedor ou atualizar a integração, reenvie uma nota incompleta para testá-la. Consulte `metadados.ia.provedor`, `chamadas`, `erro` e `campos_aceitos` nos detalhes.
+A integração Gemini usa [`generateContent` com saída JSON estruturada](https://ai.google.dev/gemini-api/docs/structured-output) por `generationConfig.responseMimeType` e `responseJsonSchema`, seguida pelo filtro local de evidências e validações. Consulte `metadados.ia.provedor`, `chamadas`, `erro` e `campos_aceitos` nos detalhes.
 
-Para economizar, XML/texto/OCR e regex têm prioridade. O fallback recebe somente campos ausentes e trechos fiscais (até 12 mil caracteres), faz no máximo uma chamada por processamento e limita a saída a 1.800 tokens. Esse trecho pode conter nomes, identificadores e valores presentes no documento. Sem `IA_ENVIO_IMAGEM=1`, não envia imagens. Com ela, envia uma cópia JPEG reduzida da foto inteira (até 2048 px), que pode consumir tokens adicionais não cobertos pela estimativa simples de caracteres. Documentos completos, não fiscais ou sem texto não acionam a IA. Extrações XML não têm fallback externo nesta versão.
+Para economizar, XML/texto/OCR e regex têm prioridade. O fallback recebe somente campos ausentes e trechos fiscais (até 12 mil caracteres), faz até três tentativas no modelo principal somente em falhas temporárias e limita a saída a 1.800 tokens. Se o 3.6 Flash persistir em HTTP 503, há até duas tentativas adicionais no 3.5 Flash-Lite. Esse trecho pode conter nomes, identificadores e valores presentes no documento. Sem `IA_ENVIO_IMAGEM=1`, não envia imagens. Com ela, envia uma cópia JPEG reduzida da foto inteira (até 2048 px), que pode consumir tokens adicionais não cobertos pela estimativa simples de caracteres. Documentos completos, não fiscais ou sem texto não acionam a IA. Extrações XML não têm fallback externo nesta versão.
 
-A resposta deve citar evidência literal, conter o valor nessa evidência e preencher apenas campos ausentes permitidos. No modo texto, a evidência precisa constar do OCR. No modo foto, identificadores, datas e valores também passam por verificações locais; mesmo assim, a evidência visual gerada pela IA não pode ser conferida automaticamente contra os pixels. Valores existentes são preservados e toda nota com campos aceitos da IA exige conferência humana. JSON inválido, recusa/resposta incompleta, timeout ou falha de rede preservam a extração local. Erros HTTP mostram o status e o código de máquina devolvido pela API (por exemplo, `HTTP 429 (credit_balance_exhausted)`), sem expor a chave, a mensagem livre nem o documento. Este código indica falta de créditos na organização, não um defeito do OCR.
+Erros temporários (HTTP 408, 429, 500, 502, 503 e 504), timeout e falhas de conexão permitem até três tentativas no modelo principal, com intervalos de 1 e 2 segundos acrescidos de pequena variação aleatória. A integração respeita `Retry-After` de até 30 segundos; prazos maiores encerram a tentativa atual para não manter o upload esperando pela quota. Apenas HTTP 503 persistente ativa o modelo reserva. Erros de autenticação, parâmetros ou modelo (400/401/403/404) não são repetidos. Se todas as tentativas falharem, o resultado local é preservado. Os detalhes da interface mostram os modelos tentados, o número de tentativas e se a imagem foi enviada.
 
-Os metadados registram provedor, chamadas, uso de IA, campos aceitos, erro, estimativa simples de tokens de entrada e tokens retornados pela API. Custo estimado é calculado somente se forem definidos `IA_PRECO_ENTRADA_MILHAO` e `IA_PRECO_SAIDA_MILHAO` em USD; ajuste esses valores ao trocar de provedor. `store=false` é enviado apenas à OpenAI e não constitui garantia geral de retenção zero pelo serviço.
+A resposta deve citar evidência literal, conter o valor nessa evidência e preencher apenas campos ausentes permitidos. No modo texto, a evidência precisa constar do OCR. No modo foto, identificadores, datas e valores também passam por verificações locais; mesmo assim, a evidência visual gerada pela IA não pode ser conferida automaticamente contra os pixels. Valores existentes são preservados. Quando os campos essenciais ficam completos e válidos após a IA, o status é `Concluída`; ainda é prudente conferir os dados antes de utilizá-los. JSON inválido, recusa/resposta incompleta, timeout ou falha de rede preservam a extração local. Erros HTTP mostram o status e o código de máquina devolvido pela API (por exemplo, `HTTP 429 (RESOURCE_EXHAUSTED)`), sem expor a chave, a mensagem livre nem o documento. Esse código indica que uma cota ou limite da API foi atingido.
+
+Os metadados registram provedor, modelo, número de chamadas, histórico de falhas, envio de imagem, uso de IA, campos aceitos, erro, estimativa simples de tokens de entrada e tokens retornados pela API. Custo estimado é calculado somente se forem definidos `IA_PRECO_ENTRADA_MILHAO` e `IA_PRECO_SAIDA_MILHAO` em USD; configure esses valores conforme os preços do modelo na sua conta.
 
 ## API
 
@@ -280,13 +284,12 @@ A interface oferece exclusão com confirmação, filtros de status, busca por em
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 # OCR real opcional:
-$env:TESSERACT_CMD = 'C:/Program Files/Tesseract-OCR/tesseract.exe'
 $env:TESTAR_OCR_REAL = '1'
 .\.venv\Scripts\python.exe -m pytest -q
 npm --prefix frontend run build
 ```
 
-Os testes automatizados cobrem extração local, disparo simulado do Gemini, upload da API, limpeza do diretório temporário, isolamento das rotas e limite de requisições, sem enviar notas a um serviço externo. Para confirmar uma resposta real do Gemini, inicie o backend com a chave e as autorizações no ambiente e envie uma nota incompleta. Os PDFs, XML e `malaguNFE2.jpg` fornecidos anteriormente passaram na extração local; a foto antiga `malaguNFE.jpg` ainda requer revisão da chave de acesso, pois o OCR não a reproduz com segurança.
+Os testes automatizados cobrem extração local, disparo simulado do Gemini, upload da API, limpeza do diretório temporário, isolamento das rotas e limite de requisições, sem enviar notas a um serviço externo. Para confirmar uma resposta real do Gemini, preencha a chave e as autorizações no `.env` e reinicie o backend e envie uma nota incompleta. Os PDFs, XML e `malaguNFE2.jpg` fornecidos anteriormente passaram na extração local; a foto antiga `malaguNFE.jpg` ainda requer revisão da chave de acesso, pois o OCR não a reproduz com segurança.
 
 Para testar a leitura com cobertura útil, separe arquivos de **uma nota por documento**, com os valores corretos conhecidos para comparação:
 
@@ -298,7 +301,7 @@ Para testar a leitura com cobertura útil, separe arquivos de **uma nota por doc
 | Fotos JPG e PNG de NF-e e NFS-e, inteiras, legíveis, de frente | OCR e envio opcional de imagem ao Gemini |
 | Fotos inclinadas, com sombra/dobra e com rotação EXIF | Robustez do pré-processamento e limites de leitura |
 | NFS-e de municípios ou provedores diferentes | Adaptação a layouts distintos |
-| Nota com campo essencial ausente ou ilegível | Disparo da IA, evidência, revisão e preservação dos demais campos |
+| Nota com campo essencial ausente ou ilegível | Disparo da IA, evidência, preservação dos demais campos e conclusão quando a avaliação final estiver completa e válida |
 | Arquivo repetido e PDF/imagem inválido | Reprocessamento independente, tratamento de erro e ausência de dados inventados |
 
 Confira especialmente número, CNPJ/CPF, data de emissão, chave NF-e, valor bruto, líquido, ISS, vencimentos e o documento mostrado na prévia. Documentos de teste com dados anonimizados precisam manter os dígitos verificadores válidos quando a validação desses campos fizer parte do teste.

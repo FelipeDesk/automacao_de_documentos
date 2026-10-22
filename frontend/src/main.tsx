@@ -22,7 +22,7 @@ type Dados = {
   metadados: {
     metodo: string;
     ocr_utilizado: boolean;
-    ia: { utilizada: boolean; erro: string | null; chamadas: number; provedor?: string; campos_aceitos?: string[] };
+    ia: { utilizada: boolean; erro: string | null; chamadas: number; provedor?: string; modelo?: string; modelos_tentados?: string[]; imagem_enviada?: boolean; campos_aceitos?: string[] };
   };
 };
 type Nota = {
@@ -45,16 +45,16 @@ const campoNome: Record<string, string> = {
   "destinatario.cnpj_cpf": "CPF/CNPJ do destinatário",
 };
 const tipoNome = { nfe: "NF-e", nfse: "NFS-e" };
-const explicarErroIA = (erro: string, provedor?: string) => {
-  if (provedor === "gemini" && (erro.includes("RESOURCE_EXHAUSTED") || erro.startsWith("HTTP 429")))
-    return "A cota do Gemini foi atingida. Confira os limites do nível gratuito no Google AI Studio.";
-  if (erro.includes("credit_balance_exhausted"))
-    return "A API da OpenAI está sem créditos. Verifique o saldo e adicione créditos no painel de faturamento.";
-  if (erro.includes("model_not_found"))
-    return "O modelo configurado não está disponível para esta chave. Confira IA_MODELO no backend.";
+const explicarErroIA = (erro: string) => {
+  if (erro.startsWith("HTTP 503") || erro.includes("UNAVAILABLE"))
+    return "O Gemini está temporariamente indisponível. Tente novamente mais tarde; a extração local foi mantida.";
+  if (erro.includes("RESOURCE_EXHAUSTED") || erro.startsWith("HTTP 429"))
+    return "A cota do Gemini foi atingida. Confira os limites da sua conta no Google AI Studio.";
+  if (erro.startsWith("HTTP 404"))
+    return "O modelo configurado não está disponível para esta chave. Confira o acesso ao Gemini 3.6 Flash no Google AI Studio.";
   if (erro.startsWith("HTTP 401"))
-    return `A chave da API foi recusada. Confira ${provedor === "gemini" ? "GEMINI_API_KEY" : "OPENAI_API_KEY"} no backend.`;
-  if (provedor === "gemini" && erro.startsWith("HTTP 403"))
+    return "A chave da API foi recusada. Confira GEMINI_API_KEY no .env do backend.";
+  if (erro.startsWith("HTTP 403"))
     return "O Gemini recusou o acesso. Confira a chave, o projeto e a disponibilidade do modelo no Google AI Studio.";
   return `A API retornou ${erro}. Confira as configurações e os limites da conta.`;
 };
@@ -256,46 +256,9 @@ function App() {
   const detalhes = selecionada?.dados;
   return (
     <div className="app">
-      <aside className="sidebar">
-        <a className="brand" href="#inicio">
-          <span className="brand-icon">n</span>notas
-          <span className="brand-dot">.</span>
-        </a>
-        <span className="nav-label">ESPAÇO DE TRABALHO</span>
-        <button
-          className={`nav-item ${!filtroStatus ? "selected" : ""}`}
-          onClick={() => setFiltroStatus("")}
-        >
-          <span>▤</span> Documentos{" "}
-          <span className="nav-count">{notas.length}</span>
-        </button>
-        <button
-          className={`nav-item ${filtroStatus === "revisao_necessaria" ? "selected" : ""}`}
-          onClick={() => setFiltroStatus("revisao_necessaria")}
-        >
-          <span>◷</span> Para revisar{" "}
-          <span className="nav-count">
-            {notas.filter((n) => n.status === "revisao_necessaria").length}
-          </span>
-        </button>
-        <div className="local-note">
-          <span className="green-dot" /> Sessão temporária
-          <p>Os dados desta aba desaparecem ao recarregar ou fechar a página.</p>
-        </div>
-      </aside>
       <main id="inicio">
-        <header>
-          <div className="breadcrumb">
-            Meu espaço <span>/</span> Documentos fiscais
-          </div>
-          <span className="local-chip">NF-e & NFS-e</span>
-        </header>
         <div className="heading">
-          <div>
-            <span className="eyebrow">SESSÃO TEMPORÁRIA</span>
-            <h1>Notas fiscais</h1>
-            <p>Extraia e organize nesta aba. Exporte antes de sair.</p>
-          </div>
+          <h1>Extrator de dados de Nf-e e NFS-e</h1>
           <div className="export-actions">
             <button className="secondary" disabled={!notas.length || enviando} onClick={() => exportar(notas, "json")}>Exportar JSON</button>
             <button className="secondary" disabled={!notas.length || enviando} onClick={() => exportar(notas, "csv")}>Exportar CSV</button>
@@ -595,6 +558,10 @@ function App() {
                   : "Não",
                 "IA acionada": detalhes.metadados.ia.utilizada ? "Sim" : "Não",
                 "Provedor IA": detalhes.metadados.ia.provedor || "Não configurado",
+                "Modelo IA": detalhes.metadados.ia.modelo || "Não informado",
+                "Modelos tentados": detalhes.metadados.ia.modelos_tentados?.join(", ") || "Nenhum",
+                "Tentativas de IA": String(detalhes.metadados.ia.chamadas),
+                "Imagem enviada à IA": detalhes.metadados.ia.imagem_enviada ? "Sim" : "Não",
                 "Campos preenchidos pela IA": detalhes.metadados.ia.campos_aceitos?.join(", ") || "Nenhum",
               }).map(([nome, valor]) => (
                 <div key={nome}>
@@ -626,7 +593,7 @@ function App() {
               )}
               {detalhes.metadados.ia.erro && (
                 <p className="error">
-                  Falha no auxílio de IA: {explicarErroIA(detalhes.metadados.ia.erro, detalhes.metadados.ia.provedor)}
+                  Falha no auxílio de IA: {explicarErroIA(detalhes.metadados.ia.erro)}
                   {" "}Extração local preservada.
                 </p>
               )}

@@ -24,7 +24,7 @@ def impedir_ia_externa(monkeypatch):
     monkeypatch.setenv('IA_HABILITADA', '0')
     def bloquear(*args, **kwargs):
         raise AssertionError('Chamadas externas proibidas na suíte de testes')
-    monkeypatch.setattr('processamento.ia.chamar_api', bloquear)
+    monkeypatch.setattr('processamento.ia.urllib.request.urlopen', bloquear)
 
 
 @pytest.fixture

@@ -10,7 +10,7 @@ from processamento.ia import completar_com_ia
 from extratores.nfe_pdf import extrair_nfe_pdf
 from extratores.nfse_pdf import extrair_nfse_pdf
 
-VERSAO_EXTRACAO = 8
+VERSAO_EXTRACAO = 11
 
 EXTENSOES = {'.xml', '.pdf', '.png', '.jpg', '.jpeg'}
 
@@ -42,9 +42,5 @@ def processar_documento(arquivo):
     resultado = normalizar_resultado(resultado)
     resultado['validacoes'] = validar_resultado(resultado)
     resultado['avaliacao'] = avaliar_extracao(resultado)
-    if ia['campos_aceitos']:
-        resultado['avaliacao']['status_extracao'] = 'revisao_necessaria'
-        resultado['avaliacao']['inconsistencias'].append('conferir_campos_extraidos_por_ia')
-        resultado['avaliacao']['confianca_estimada'] = 'baixa'
     resultado['metadados'] = {**meta, 'ia': ia}
     return resultado
