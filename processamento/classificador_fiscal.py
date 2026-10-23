@@ -47,4 +47,10 @@ def identificar_tipo_pdf(texto):
     if "DANFE" in texto and encontrados >= 2:
         return "nfe"
 
+    # OCR de DANFE compacto às vezes separa NF-e em "N F-e" e perde DANFE.
+    if (re.search(r'\bN\s*F\s*-\s*E\b', texto)
+            and sum(indicador in texto for indicador in
+                    ('SEFAZ', 'CHAVE DE ACESSO', 'NOTA FISCAL INDICADA AO LADO', 'SERIE')) >= 2):
+        return "nfe"
+
     return "desconhecido"

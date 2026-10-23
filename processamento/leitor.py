@@ -1,44 +1,35 @@
 from pathlib import Path
 from pypdf import PdfReader
+from processamento.ocr import aplicar_ocr_pagina_pdf, extrair_texto_imagem
 
-from processamento.ocr import aplicar_ocr_pagina_pdf
 
 def texto_util(texto):
-    if not texto:
-        return False
-
-    return len(texto.strip()) >= 20
+    return bool(texto and len(texto.strip()) >= 20)
 
 
-def ler_pdf(caminho):
-    leitor = PdfReader(caminho)
-
-    partes_texto = []
-
-    for numero_pagina, pagina in enumerate(leitor.pages):
-        texto_pagina = pagina.extract_text() or ""
-
-        if not texto_util(texto_pagina):
-            texto_pagina = aplicar_ocr_pagina_pdf(
-                caminho,
-                numero_pagina
-            )
-
-        if texto_util(texto_pagina):
-            partes_texto.append(texto_pagina)
-
-    return "\n".join(partes_texto)
+def ler_pdf(caminho, metadados=None):
+    partes = []
+    for numero, pagina in enumerate(PdfReader(caminho).pages):
+        texto = (pagina.extract_text(extraction_mode='layout') or '') if pagina.get('/Contents') is not None else ''
+        if not texto_util(texto):
+            texto = aplicar_ocr_pagina_pdf(caminho, numero)
+            if metadados is not None:
+                metadados['ocr_utilizado'] = True
+        if texto_util(texto):
+            partes.append(texto)
+    return '\n'.join(partes)
 
 
-def ler_documento(caminho):
+def ler_documento(caminho, metadados=None):
     caminho = Path(caminho)
-
-    if caminho.suffix.lower() != ".pdf":
-        return None, "formato_nao_suportado"
-
-    texto = ler_pdf(caminho)
-
-    if texto_util(texto):
-        return texto, "sucesso"
-
-    return None, "texto_nao_encontrado"
+    if metadados is not None:
+        metadados['ocr_utilizado'] = False
+    if caminho.suffix.lower() == '.pdf':
+        texto = ler_pdf(caminho, metadados)
+    elif caminho.suffix.lower() in {'.jpg', '.jpeg', '.png'}:
+        texto = extrair_texto_imagem(caminho)
+        if metadados is not None:
+            metadados['ocr_utilizado'] = True
+    else:
+        return None, 'formato_nao_suportado'
+    return (texto, 'sucesso') if texto_util(texto) else (None, 'texto_nao_encontrado')

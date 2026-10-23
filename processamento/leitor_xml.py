@@ -1,6 +1,6 @@
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from extratores.nfe_xml import extrair_nfe_xml
-from extratores.nfse_xml import extrair_nfse_xml
+from extratores.nfse_xml import extrair_nfse_xml, eh_nfse_paulistana
 
 def identificar_xml(caminho):
     arvore = ET.parse(caminho)
@@ -12,6 +12,9 @@ def identificar_xml(caminho):
         return "nfe"
 
     if "abrasf.org.br/nfse" in tag_raiz:
+        return "nfse"
+
+    if eh_nfse_paulistana(raiz):
         return "nfse"
 
     return "desconhecido"

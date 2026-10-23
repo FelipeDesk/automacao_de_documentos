@@ -1,4 +1,4 @@
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 
 NAMESPACE = {"nfe": "http://www.portalfiscal.inf.br/nfe"}
 
@@ -104,5 +104,6 @@ def extrair_nfe_xml(caminho):
 
         "data_emissao": data_emissao,
         "data_vencimento": data_vencimento,
+        "vencimentos": [obter_texto(dup, "nfe:dVenc") for dup in raiz.findall(".//nfe:dup", NAMESPACE)],
         "valor_total": valor_total
     }

@@ -1,4 +1,5 @@
 import re
+import math
 from datetime import datetime
 
 def normalizar_cnpj(cnpj):
@@ -53,17 +54,19 @@ def normalizar_valor(valor):
         return None
 
     if isinstance(valor, (int, float)):
-        return float(valor)
+        numero = float(valor)
+        return numero if math.isfinite(numero) else None
 
     valor = valor.strip()
-    valor = valor.replace("R$", "").strip()
+    valor = valor.replace("R$", "").replace("%", "").strip()
 
     if "," in valor:
         valor = valor.replace(".", "")
         valor = valor.replace(",", ".")
 
     try:
-        return float(valor)
+        numero = float(valor)
+        return numero if math.isfinite(numero) else None
 
     except ValueError:
         return None
@@ -106,8 +109,8 @@ def normalizar_data(data):
     return None
 
 def normalizar_resultado(resultado):
-    emitente = resultado.get("emitente", {})
-    destinatario = resultado.get("destinatario", {})
+    emitente = resultado.get("emitente") or {}
+    destinatario = resultado.get("destinatario") or {}
 
     resultado_normalizado = {
         "tipo": resultado.get("tipo"),
@@ -153,4 +156,13 @@ def normalizar_resultado(resultado):
         )
     }
 
+    for campo in ("valor_liquido", "valor_iss", "base_calculo_iss", "aliquota_iss"):
+        resultado_normalizado[campo] = normalizar_valor(resultado.get(campo))
+    resultado_normalizado["vencimentos"] = [
+        data for valor in resultado.get("vencimentos", [])
+        if (data := normalizar_data(valor)) is not None
+    ]
+    if not resultado_normalizado["vencimentos"] and resultado_normalizado["data_vencimento"]:
+        resultado_normalizado["vencimentos"] = [resultado_normalizado["data_vencimento"]]
+    resultado_normalizado["iss_retido"] = resultado.get("iss_retido")
     return resultado_normalizado

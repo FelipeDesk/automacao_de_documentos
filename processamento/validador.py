@@ -109,7 +109,7 @@ def validar_chave_acesso(chave):
 
     chave = re.sub(r"\D", "", chave)
 
-    if len(chave) != 44:
+    if len(chave) != 44 or len(set(chave)) == 1:
         return False
 
     numeros = chave[:43]

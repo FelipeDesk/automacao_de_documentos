@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 
 from main import salvar_resultado
-from main import extrair_dados
+from main import extrair_dados, processar_arquivo
 from processamento.normalizador import normalizar_resultado
 from processamento.validador import validar_resultado
 
@@ -63,3 +63,37 @@ def test_salvar_resultado_json(tmp_path, monkeypatch):
     assert resultado["tipo"] == "nfe"
     assert resultado["numero_nota"] == "12345"
     assert resultado["valor_total"] == 150.75
+
+
+
+def test_processar_arquivo_com_avaliacao(tmp_path, monkeypatch):
+    # Redireciona os resultados para uma pasta temporária
+    monkeypatch.setattr("main.PASTA_RESULTADOS", tmp_path)
+
+    # Utiliza nosso XML fictício de teste
+    caminho = FIXTURES / "nfe_teste.xml"
+
+    # Executa o fluxo principal
+    processar_arquivo(caminho)
+
+    # Verifica se o JSON foi gerado
+    caminho_json = tmp_path / "nfe_teste_xml.json"
+
+    assert caminho_json.exists()
+
+    # Lê o resultado salvo
+    with open(caminho_json, "r", encoding="utf-8") as arquivo:
+        resultado = json.load(arquivo)
+
+    # Verifica se o diagnóstico foi incluído
+    assert "validacoes" in resultado
+    assert "avaliacao" in resultado
+
+    assert resultado["avaliacao"]["status_extracao"] in (
+        "completo",
+        "revisao_necessaria",
+    )
+
+    assert isinstance(
+        resultado["avaliacao"]["campos_ausentes"], list
+    )
