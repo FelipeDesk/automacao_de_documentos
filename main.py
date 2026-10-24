@@ -15,11 +15,6 @@ def salvar_resultado(resultado, arquivo):
     gravar_json(PASTA_RESULTADOS / f'{arquivo.stem}_{arquivo.suffix[1:].lower()}.json', resultado)
 
 
-def dados_minimos_presentes(resultado):
-    emitente = resultado.get('emitente') or {}
-    return bool(resultado.get('numero_nota')) and bool(emitente.get('cnpj')) and resultado.get('valor_total') is not None
-
-
 def extrair_dados(arquivo):
     return extrair_documento(arquivo)[0]
 

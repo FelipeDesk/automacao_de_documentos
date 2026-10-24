@@ -1,5 +1,5 @@
 import re
-from extratores.campos_layout import campo_abaixo, documento_unico, DINHEIRO, DATA
+from extratores.campos_layout import campo_abaixo, documento_unico, CNPJ, DINHEIRO, DATA
 
 def extrair_chave_acesso(texto):
     chaves = set(re.sub(r"\s", "", m.group()) for m in re.finditer(r"(?<!\d)(?:\d{4}[ \t]+){10}\d{4}(?!\d)|(?<!\d)\d{44}(?!\d)", texto))
@@ -25,7 +25,7 @@ def extrair_chave_acesso(texto):
 
 def extrair_numero_nota(texto):
     cabecalho = re.split(r"NATUREZA DA OPERA[ÇC][ÃA]O|NOME\s*/?\s*RAZ[ÃA]O", texto, flags=re.I)[0]
-    candidatos = set(re.sub(r"\D", "", m) for m in re.findall(r"\bN[º°a .]*\s*(\d{3}[. ]\d{3}[. ]\d{3})\b", cabecalho, re.I))
+    candidatos = set(re.sub(r"\D", "", m) for m in re.findall(r"\bN[º°oa .]*\s*(\d{3}[. :]+\d{3}[. :]+\d{3})\b", cabecalho, re.I))
     if len(candidatos) == 1:
         return next(iter(candidatos))
     numeros = set(re.sub(r"\D", "", m) for m in re.findall(r"N[º°.]\s*([\d.]+)", texto, re.I))
@@ -87,7 +87,7 @@ def extrair_cnpj_emitente(texto):
     if not bloco:
         return None
 
-    padrao = r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b"
+    padrao = rf"\b{CNPJ}\b"
 
     resultado = re.search(
         padrao,
@@ -97,10 +97,10 @@ def extrair_cnpj_emitente(texto):
     if not resultado:
         return None
 
-    return resultado.group()
+    return re.sub(r'[ \t]', '', resultado.group())
 
 def extrair_razao_emitente(texto):
-    recibo = re.search(r"Recebemos de\s+(.+?),\s*os produtos", texto, re.I)
+    recibo = re.search(r"Recebemos de\s+(.+?),?\s+os produtos", texto, re.I)
     if recibo:
         return recibo.group(1).strip()
     bloco = extrair_bloco_emitente(texto)
@@ -164,7 +164,9 @@ def extrair_razao_destinatario(texto):
         candidato = re.match(r'\s*([A-ZÀ-Ú][A-ZÀ-Ú ]{7,}?)\s{2,}(?=\d{2,3}[.\s])', linha)
         if candidato and len(candidato.group(1).split()) >= 2:
             return candidato.group(1).strip()
-    padrao = r"NOME\s*/\s*RAZÃO SOCIAL\s*(.+)"
+    # Um rótulo não é um nome: só permite valor na linha seguinte ou após
+    # o título, sem capturar os títulos vizinhos CNPJ/CPF e DATA DA EMISSÃO.
+    padrao = r"NOME\s*/\s*RAZ[ÃA]O SOCIAL[ \t]*(?:\n[ \t]*)?(.+)"
 
     resultado = re.search(
         padrao,
@@ -175,7 +177,8 @@ def extrair_razao_destinatario(texto):
     if not resultado:
         return None
 
-    return resultado.group(1).strip()
+    nome = re.split(r' {2,}|\|', resultado.group(1).strip())[0].strip()
+    return nome if not re.search(r'CNPJ|CPF|DATA.*EMISS|ENDERE[ÇC]O', nome, re.I) else None
 
 def extrair_data_emissao(texto):
     tabular = campo_abaixo(texto, r"DATA\s*(?:D[AE] )?EMIS[S]?[ÃA]O", DATA)
@@ -223,19 +226,23 @@ def extrair_valor_total(texto):
     recibo = re.search(rf'\bVALOR\s+TOTAL\s*:\s*({DINHEIRO})', cabecalho, re.I)
     return recibo.group(1) if recibo else None
 
-def extrair_data_vencimento(texto):
+def extrair_vencimentos(texto):
+    """Lê vencimentos explícitos e colunas repetidas da tabela de duplicatas."""
     padrao = r"(?:VENCIMENTO|DT\.\s*VENC\.?)\s*(\d{2}/\d{2}/\d{4})"
+    datas = re.findall(padrao, texto, re.I)
+    for tabela in re.findall(r'FATURA\s*/\s*DUPLICATA(.*?)(?:C.LCULO DO IMPOSTO|$)', texto, re.I | re.S):
+        if not re.search(r'DUPLICATA\s+VENCIMENTO\s+VALOR', tabela, re.I):
+            continue
+        for linha in tabela.splitlines():
+            # Data e valor devem pertencer à mesma parcela, evitando datas
+            # de emissão ou de saída de outras seções do documento.
+            datas.extend(re.findall(rf'\b[\dOo]{{1,3}}[ \t]+({DATA})[ \t]+{DINHEIRO}', linha))
+    return list(dict.fromkeys(datas))
 
-    resultado = re.search(
-        padrao,
-        texto,
-        re.IGNORECASE
-    )
 
-    if not resultado:
-        return None
-
-    return resultado.group(1)
+def extrair_data_vencimento(texto):
+    datas = extrair_vencimentos(texto)
+    return datas[0] if datas else None
 
 def extrair_nfe_pdf(texto):
     return {
@@ -258,7 +265,7 @@ def extrair_nfe_pdf(texto):
         "data_emissao": extrair_data_emissao(texto),
 
         "data_vencimento": extrair_data_vencimento(texto),
-        "vencimentos": re.findall(r"(?:VENCIMENTO|DT\.\s*VENC\.?)\s*(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE),
+        "vencimentos": extrair_vencimentos(texto),
 
         "valor_total": extrair_valor_total(texto)
     }

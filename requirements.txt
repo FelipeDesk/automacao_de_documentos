@@ -1,8 +1,9 @@
-pypdf==6.19.0
+pypdf==6.21.2
 PyMuPDF==1.28.2
 pytesseract==0.3.13
-Pillow==12.3.0
+Pillow==13.0.0
 defusedxml==0.7.1
 fastapi==0.143.0
 uvicorn==0.54.0
 python-multipart==0.0.32
+python-dotenv==1.2.4

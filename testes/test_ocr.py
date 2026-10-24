@@ -4,6 +4,24 @@ from PIL import Image
 from processamento.leitor import ler_documento
 
 
+def test_remocao_grade_preserva_original_e_tracos_curtos():
+    from PIL import ImageDraw
+    from processamento.ocr import remover_grade
+    imagem = Image.new('L', (400, 300), 255)
+    desenho = ImageDraw.Draw(imagem)
+    for y in (20, 80, 140, 200):
+        desenho.line((10, y, 390, y), fill=0)
+    desenho.line((10, 20, 10, 200), fill=0)
+    desenho.line((40, 40, 46, 40), fill=0)
+    original = imagem.tobytes()
+    limpa = remover_grade(imagem)
+    assert imagem.tobytes() == original
+    assert limpa.getpixel((100, 80)) == 255
+    assert limpa.getpixel((10, 100)) == 255
+    assert limpa.getpixel((43, 40)) == 0
+    assert remover_grade(Image.new('L', (400, 300), 255)) is None
+
+
 @pytest.mark.parametrize('ext', ['png', 'jpg', 'jpeg'])
 def test_imagem(tmp_path, monkeypatch, ext):
     arquivo = tmp_path / f'nota.{ext}'

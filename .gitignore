@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+# Configurações locais e chaves de API
 .env
 .env.*
 !.env.example

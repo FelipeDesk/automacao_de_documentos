@@ -60,6 +60,8 @@ def test_completo_mas_invalido_exige_revisao():
 
 def test_obrigatorios_por_tipo():
     resultado = avaliar_extracao({'tipo': 'nfe'})
+    assert 'confianca_estimada' not in resultado
+    assert 'criterio_confianca' not in resultado
     assert 'chave_acesso' in resultado['campos_ausentes']
     assert 'data_vencimento' not in resultado['campos_ausentes']
     assert resultado['elegivel_ia']

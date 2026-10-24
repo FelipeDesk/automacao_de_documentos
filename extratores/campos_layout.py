@@ -2,7 +2,9 @@
 import re
 
 DINHEIRO = r'(?:R\$[ \t]*)?\d[\d.]*,\d{2}(?!\d)'
-DOCUMENTO = r'(?<!\d)(?:\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})(?!\d)'
+CNPJ = r'\d{2}\.[ \t]*\d{3}\.[ \t]*\d{3}/[ \t]*\d{4}-[ \t]*\d{2}'
+CPF = r'\d{3}\.[ \t]*\d{3}\.[ \t]*\d{3}-[ \t]*\d{2}'
+DOCUMENTO = rf'(?<!\d)(?:{CNPJ}|{CPF})(?!\d)'
 DATA = r'\d{2}/\d{2}/\d{4}'
 
 
@@ -46,5 +48,5 @@ def campo_abaixo(texto, rotulo, padrao, max_linhas=3):
 
 
 def documento_unico(bloco):
-    encontrados = set(re.findall(DOCUMENTO, bloco or ''))
+    encontrados = {re.sub(r'[ \t]', '', valor) for valor in re.findall(DOCUMENTO, bloco or '')}
     return next(iter(encontrados)) if len(encontrados) == 1 else None
