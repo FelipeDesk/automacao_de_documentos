@@ -1,60 +1,125 @@
-# Extrator de notas fiscais
+# Extrator de Notas Fiscais
 
-Aplicação para organizar dados de **NF-e e NFS-e** a partir de arquivos XML, PDF, JPG e PNG. Ela lê o documento, extrai campos como número, emitente, destinatário, data e valor, valida os identificadores e indica se a nota está concluída ou precisa de revisão.
+Aplicação para extrair, organizar e revisar informações de notas fiscais brasileiras **NF-e e NFS-e** a partir de arquivos XML, PDF e imagens.
 
-![Tela do extrator com duas notas fictícias](docs/interface-atual.jpg)
+O projeto identifica campos como número da nota, emitente, destinatário, data de emissão e valor total. Quando os dados extraídos estão incompletos ou precisam de conferência, o documento pode ser sinalizado para revisão.
 
-*Captura da aplicação com documentos fictícios. Eles aparecem para revisão porque contêm identificadores inválidos de propósito.*
+![Tela do extrator com duas notas fictícias](docs/Captura_Interface.png)
 
-## O que a aplicação oferece
+## Como funciona
 
-- Leitura de XML e PDF, com OCR por Tesseract para imagens e páginas digitalizadas.
-- Auxílio opcional do Gemini para preencher campos essenciais que a leitura local não encontrou.
-- Painel com prévia do arquivo, busca, filtros, detalhes e exportação em JSON ou CSV.
-- Processamento em lote local para quem prefere colocar arquivos em uma pasta.
+O projeto possui dois modos de uso: uma aplicação web e uma automação local para processamento em lote.
 
-Na interface web, cada upload é processado pela API e o arquivo temporário é apagado ao final. Resultados e prévias ficam somente na memória da aba: **recarregar ou fechar a página descarta a lista**. O modo de lote, por outro lado, salva JSON, CSV e SQLite no computador.
+### 1. Aplicação web
 
-**Tecnologias:** Python e FastAPI no backend; pypdf, PyMuPDF e Tesseract na leitura; React, TypeScript e Vite na interface; SQLite apenas no lote local.
+- Envio de arquivos por upload ou arrastar e soltar.
+- Extração de dados de XML e PDF, com OCR para PDFs digitalizados e imagens.
+- Uso opcional de IA como apoio quando a extração local não é suficiente.
+- Visualização, pesquisa, filtros e detalhes dos resultados.
+- Exportação dos resultados em JSON e CSV.
 
-## Como executar
+**Privacidade:** os arquivos enviados são processados temporariamente pela API. A aplicação web não mantém um histórico no servidor; os resultados ficam na memória da aba do navegador e são perdidos ao recarregar ou fechar a página.
 
-O projeto foi verificado no Windows com Python 3.14 e Node.js 24. Use Python **3.12 ou superior** e Node.js **22.12 ou superior**. Para ler fotos e PDFs escaneados, instale também o **Tesseract OCR** com o idioma português (`por`). XML e PDFs com texto não precisam do Tesseract.
+### 2. Automação local com processamento em lote
 
-Na raiz do projeto, abra o PowerShell e instale as dependências:
+A automação local permite processar vários documentos a partir da pasta `entrada/`.
+
+Após a execução, os arquivos são organizados conforme o resultado do processamento, em pastas como:
+
+- `processados/`
+- `revisao/`
+- `erros/`
+
+Os dados extraídos são salvos em arquivos JSON e CSV dentro de `resultados/`. O modo local também utiliza o banco SQLite `notas.sqlite3` para manter registros e apoiar o controle de duplicados.
+
+Esses arquivos e pastas são gerados localmente e não devem ser enviados ao GitHub quando contiverem dados fiscais reais.
+
+## Tecnologias utilizadas
+
+- **Python** — processamento e extração de dados.
+- **FastAPI** — API da aplicação web.
+- **React, TypeScript e Vite** — interface web.
+- **PyMuPDF e pypdf** — leitura de PDFs.
+- **Tesseract OCR** — reconhecimento de texto em imagens e PDFs digitalizados.
+- **SQLite** — histórico da automação local.
+- **Gemini (opcional)** — apoio à extração de informações.
+- **Pytest** — testes automatizados.
+
+## Requisitos
+
+- Python 3.12 ou superior.
+- Node.js 22.12 ou superior.
+- Tesseract OCR instalado, com o idioma português (`por`), para processar imagens e PDFs digitalizados.
+
+Os comandos abaixo foram preparados para PowerShell no Windows.
+
+## Como executar a aplicação web
+
+### 1. Criar o ambiente Python
+
+Na raiz do projeto, execute:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+### 2. Instalar as dependências do frontend
+
+```powershell
 npm --prefix frontend ci
+```
+
+### 3. Configurar as variáveis de ambiente
+
+Se o arquivo `.env` ainda não existir, crie-o a partir do modelo:
+
+```powershell
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-O backend lê o `.env` automaticamente na inicialização. Se o Tesseract não estiver no `PATH`, informe nele o caminho do executável, por exemplo `TESSERACT_CMD=C:/Program Files/Tesseract-OCR/tesseract.exe`.
+A configuração da IA é opcional. Consulte a seção **Configurar a IA opcional** abaixo se quiser habilitá-la.
 
-Inicie o backend em um terminal:
+### 4. Iniciar a API
+
+Em um terminal, execute:
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn api:app --host 127.0.0.1 --port 8000
 ```
 
-Em outro terminal, inicie a interface:
+A documentação interativa da API ficará disponível em:
+
+[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+
+### 5. Iniciar o frontend
+
+Em outro terminal, execute:
 
 ```powershell
 npm --prefix frontend run dev
 ```
 
-Abra **http://127.0.0.1:5173/**, selecione ou arraste um arquivo e confira os campos em **Ver detalhes**. A API também pode ser explorada em **http://127.0.0.1:8000/docs**. Cada arquivo deve conter uma nota fiscal.
+Abra a aplicação no navegador:
 
-Para experimentar sem dados reais, use os documentos de `testes/fixtures/` ou gere exemplos em uma pasta separada:
+[http://127.0.0.1:5173/](http://127.0.0.1:5173/)
+
+## Como executar a automação local
+
+1. Coloque os documentos que deseja processar na pasta `entrada/`.
+2. Na raiz do projeto, execute:
 
 ```powershell
-.\.venv\Scripts\python.exe gerar_demo.py --saida resultados/demo
+.\.venv\Scripts\python.exe main.py
 ```
 
-## Gemini opcional
+3. Consulte os documentos organizados nas pastas de saída e os arquivos JSON/CSV em `resultados/`.
 
-O processamento começa sempre pela leitura local. O Gemini só é chamado quando falta um campo essencial e as opções abaixo estão habilitadas no `.env`:
+O modo local utiliza `notas.sqlite3` para registrar informações do processamento. Antes de processar documentos reais, confira se as pastas de entrada e saída estão configuradas corretamente e evite compartilhar arquivos fiscais no repositório público.
+
+## Configurar a IA opcional
+
+A extração local funciona sem a IA. Para habilitar o recurso, configure no arquivo `.env`:
 
 ```dotenv
 GEMINI_API_KEY=sua-chave
@@ -63,19 +128,18 @@ IA_ENVIO_AUTORIZADO=1
 IA_ENVIO_IMAGEM=0
 ```
 
-Reinicie o backend após alterar o arquivo. Com `IA_ENVIO_IMAGEM=0`, a IA recebe trechos do texto extraído; com `IA_ENVIO_IMAGEM=1`, fotos incompletas também podem ser enviadas ao Google. Esses trechos ou imagens podem conter dados fiscais e pessoais. O modelo principal é Gemini 3.6 Flash, com 3.5 Flash-Lite como alternativa quando o primeiro permanece indisponível. Falhas de cota ou conexão preservam a extração local.
+- `GEMINI_API_KEY`: chave de acesso ao serviço.
+- `IA_HABILITADA`: habilita o recurso de IA.
+- `IA_ENVIO_AUTORIZADO`: indica que o envio de dados para o serviço externo foi autorizado.
+- `IA_ENVIO_IMAGEM`: controla se imagens podem ser enviadas à IA; mantenha `0` para não enviar imagens.
 
-## Processamento em lote
+**Atenção:** o uso da IA pode enviar trechos de texto extraídos de documentos para um serviço externo. Se o envio de imagens estiver habilitado, imagens também poderão ser transmitidas. Notas fiscais podem conter dados pessoais ou empresariais; utilize esse recurso somente quando estiver de acordo com as implicações de privacidade.
 
-Coloque os documentos em `entrada/` e execute o comando abaixo na raiz:
-
-```powershell
-.\.venv\Scripts\python.exe main.py
-```
-
-O lote organiza os arquivos em `processados/`, `revisao/` ou `erros/` e grava os resultados em `resultados/` e `notas.sqlite3`. Essas pastas e o banco são ignorados pelo Git. A API web não usa o banco de dados do lote.
+Mantenha o arquivo `.env` fora do Git. O arquivo `.env.example` deve conter apenas nomes de variáveis e valores ilustrativos, nunca chaves reais.
 
 ## Testes
+
+Para instalar as dependências de desenvolvimento e executar os testes automatizados:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
@@ -83,10 +147,28 @@ O lote organiza os arquivos em `processados/`, `revisao/` ou `erros/` e grava os
 npm --prefix frontend run build
 ```
 
-Os testes automatizados não fazem chamadas reais ao Gemini. Para verificar OCR com o Tesseract instalado, defina `$env:TESTAR_OCR_REAL='1'` antes de executar o pytest.
+Os testes automatizados não precisam realizar chamadas reais à IA. Para executar os testes de OCR real, com o Tesseract instalado e configurado, defina a variável abaixo antes de rodar os testes:
 
-## Privacidade e limites
+```powershell
+$env:TESTAR_OCR_REAL='1'
+.\.venv\Scripts\python.exe -m pytest -q
+```
 
-O `.env` com a chave de API não é versionado. A interface web não mantém um histórico no servidor e não exige login; por isso, execute-a apenas em ambiente local ou acrescente autenticação e proteção de infraestrutura antes de hospedá-la publicamente. Exportações JSON/CSV ficam no dispositivo de quem fez o download.
+## Limitações conhecidas
 
-Os dados extraídos devem ser conferidos antes de uso fiscal. O projeto não valida a nota junto à SEFAZ ou às prefeituras, não verifica assinatura digital e não separa várias notas dentro de um mesmo arquivo. Layouts incomuns e imagens de baixa qualidade podem deixar campos pendentes.
+- O sistema não valida as notas diretamente junto à SEFAZ ou às prefeituras.
+- A assinatura digital dos documentos não é verificada.
+- Arquivos que contenham várias notas fiscais podem exigir tratamento separado.
+- Layouts incomuns, documentos incompletos ou imagens de baixa qualidade podem gerar campos pendentes de revisão.
+- A extração automática é uma ferramenta de apoio e os dados devem ser conferidos antes de serem utilizados em processos fiscais ou financeiros.
+
+## Segurança e privacidade
+
+- Não publique arquivos `.env`, bancos SQLite, resultados de processamento ou notas fiscais reais.
+- A aplicação web não possui autenticação. Antes de disponibilizá-la publicamente, implemente proteções adequadas, como autenticação, limites de uso e controles contra abuso.
+- Os resultados exportados em JSON ou CSV podem conter dados fiscais. Guarde-os em local seguro.
+- Utilize documentos fictícios ou anonimizados em demonstrações e capturas de tela.
+
+## Objetivo do projeto
+
+Este projeto foi desenvolvido como estudo prático de Python, extração de dados, OCR, APIs e integração entre backend e frontend, com foco em automatizar parte do trabalho de organização de notas fiscais.
